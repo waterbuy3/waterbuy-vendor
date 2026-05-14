@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Droplets, Eye, EyeOff, Loader2 } from "lucide-react";
 import { signInWithEmail } from "@/lib/supabase";
 
@@ -86,7 +86,10 @@ export function Login() {
           </form>
 
           <p className="text-center text-xs text-slate-400 mt-5">
-            Contact your platform admin if you don't have credentials.
+            New distributor?{" "}
+            <Link to="/register" className="text-teal-600 font-bold hover:underline">
+              Register your business
+            </Link>
           </p>
         </div>
       </div>
