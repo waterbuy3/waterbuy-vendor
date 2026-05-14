@@ -195,10 +195,11 @@ export function subscribeVendorOrders(
   if (!supabase) { callback([]); return () => {}; }
 
   const fetch = async () => {
+    // Show orders assigned to this vendor OR unassigned orders (claimable)
     const { data } = await supabase!
       .from("orders")
       .select("*")
-      .eq("vendor_id", vendorId)
+      .or(`vendor_id.eq.${vendorId},vendor_id.is.null`)
       .order("placed_at", { ascending: false });
     callback((data ?? []).map((r) => rowToOrder(r as Record<string, unknown>)));
   };
@@ -220,8 +221,9 @@ export async function updateOrderStatus(orderId: string, status: string): Promis
   await supabase.from("orders").update(update).eq("id", orderId);
 }
 
-export async function acceptOrder(orderId: string): Promise<void> {
-  await updateOrderStatus(orderId, "confirmed");
+export async function acceptOrder(orderId: string, vendorId: string): Promise<void> {
+  if (!supabase) return;
+  await supabase.from("orders").update({ status: "confirmed", vendor_id: vendorId }).eq("id", orderId);
 }
 
 export async function rejectOrder(orderId: string): Promise<void> {

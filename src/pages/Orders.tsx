@@ -59,7 +59,7 @@ export function Orders() {
 
   const handle = async (action: "accept" | "reject" | "advance", id: string) => {
     try {
-      if (action === "accept")  await acceptOrder(id);
+      if (action === "accept")  await acceptOrder(id, vendor!.id);
       if (action === "reject")  await rejectOrder(id);
       if (action === "advance") {
         const order = orders.find((o) => o.id === id);
