@@ -11,12 +11,12 @@ export const isConfigured =
 // X-Client-Info or similar headers which Chrome refuses.
 function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (init?.headers) {
-    const raw = init.headers as Record<string, string>;
+    const normalized = new Headers(init.headers as HeadersInit);
     const clean: Record<string, string> = {};
-    for (const [k, v] of Object.entries(raw)) {
+    normalized.forEach((v, k) => {
       // eslint-disable-next-line no-control-regex
-      clean[k] = String(v).replace(/[^\x00-\xFF]/g, "");
-    }
+      clean[k] = v.replace(/[^\x00-\xFF]/g, "");
+    });
     return fetch(input, { ...init, headers: clean });
   }
   return fetch(input, init);
