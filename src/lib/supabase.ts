@@ -6,7 +6,25 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 export const isConfigured =
   typeof window !== "undefined" && !!supabaseUrl && supabaseUrl !== "REPLACE_ME";
 
-export const supabase = isConfigured ? createClient(supabaseUrl, supabaseAnonKey) : null;
+// Strip non-ISO-8859-1 characters from header values before the browser Fetch
+// API rejects them. Some versions of @supabase/supabase-js include Unicode in
+// X-Client-Info or similar headers which Chrome refuses.
+function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (init?.headers) {
+    const raw = init.headers as Record<string, string>;
+    const clean: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      // eslint-disable-next-line no-control-regex
+      clean[k] = String(v).replace(/[^\x00-\xFF]/g, "");
+    }
+    return fetch(input, { ...init, headers: clean });
+  }
+  return fetch(input, init);
+}
+
+export const supabase = isConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: safeFetch } })
+  : null;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
