@@ -107,7 +107,10 @@ export function Earnings() {
     return () => { u1(); u2(); };
   }, [vendor?.id]);
 
-  const periodOrders = useMemo(() => filterByPeriod(orders, period), [orders, period]);
+  // Only count orders that belong to this vendor (subscribeVendorOrders also returns unassigned orders)
+  const myOrders = useMemo(() => orders.filter((o) => o.vendorId === vendor?.id), [orders, vendor?.id]);
+
+  const periodOrders = useMemo(() => filterByPeriod(myOrders, period), [myOrders, period]);
   const periodRevenue = useMemo(() => periodOrders.reduce((s, o) => s + o.total, 0), [periodOrders]);
   const periodLitres  = useMemo(() => periodOrders.reduce((s, o) => s + o.litres, 0), [periodOrders]);
   const vendorShare   = summary.totalRevenue * (1 - summary.commissionPct / 100);
@@ -146,7 +149,7 @@ export function Earnings() {
           <p className="relative text-sm text-indigo-200">{periodOrders.length} orders · {periodLitres}L delivered</p>
 
           <div className="relative mt-4">
-            <RevenueBar orders={orders} period={period} />
+            <RevenueBar orders={myOrders} period={period} />
           </div>
         </div>
 
