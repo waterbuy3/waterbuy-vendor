@@ -16,7 +16,7 @@ export function Register() {
   const [phone,    setPhone]    = useState("");
   const [area,     setArea]     = useState("");
 
-  const inp = "w-full px-4 py-3.5 text-sm bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-teal-500/25 focus:bg-white transition-all";
+  const inp = "w-full px-4 py-3.5 text-sm bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:bg-white transition-all";
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,16 +45,20 @@ export function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0c1122] via-slate-900 to-teal-950 flex flex-col">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-8">
+    <div className="min-h-screen flex flex-col" style={{ background: "linear-gradient(135deg, #06041a 0%, #0f0c36 40%, #1a1060 70%, #0d1a6e 100%)" }}>
+      {/* Decorative blobs */}
+      <div className="fixed top-0 right-0 w-64 h-64 rounded-full opacity-20 blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #7c3aed, transparent)" }} />
+      <div className="fixed bottom-0 left-0 w-48 h-48 rounded-full opacity-15 blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #2563eb, transparent)" }} />
+
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-8 relative">
         {/* Logo */}
         <div className="flex flex-col items-center gap-3 mb-8">
-          <div className="w-14 h-14 rounded-3xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shadow-2xl shadow-teal-500/40">
+          <div className="rounded-3xl flex items-center justify-center shadow-2xl" style={{ width: 56, height: 56, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", boxShadow: "0 8px 32px rgba(99,102,241,0.45)" }}>
             <Droplets className="h-7 w-7 text-white" strokeWidth={2.5} />
           </div>
           <div className="text-center">
             <p className="text-xl font-extrabold text-white">AquaPure</p>
-            <p className="text-sm text-teal-400 font-medium">Vendor Portal</p>
+            <p className="text-sm font-medium" style={{ color: "#a5b4fc" }}>Vendor Portal</p>
           </div>
         </div>
 
@@ -73,15 +77,19 @@ export function Register() {
             {[1, 2].map((s) => (
               <div key={s} className="flex items-center gap-2 flex-1">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold transition-all shrink-0 ${
-                  step > s ? "bg-teal-500 text-white" : step === s ? "bg-teal-600 text-white ring-4 ring-teal-100" : "bg-slate-100 text-slate-400"
-                }`}>
+                  step > s
+                    ? "text-white"
+                    : step === s
+                    ? "text-white ring-4 ring-indigo-100"
+                    : "bg-slate-100 text-slate-400"
+                }`} style={step >= s ? { background: "linear-gradient(135deg, #4f46e5, #7c3aed)" } : {}}>
                   {step > s ? <CheckCircle2 className="h-4 w-4" /> : s}
                 </div>
                 <div className="flex-1">
-                  <p className={`text-[11px] font-extrabold ${step === s ? "text-teal-600" : "text-slate-400"}`}>
+                  <p className={`text-[11px] font-extrabold ${step === s ? "text-indigo-600" : "text-slate-400"}`}>
                     {s === 1 ? "Account" : "Business Info"}
                   </p>
-                  {s < 2 && <div className={`h-0.5 w-full mt-1 rounded-full ${step > s ? "bg-teal-400" : "bg-slate-200"}`} />}
+                  {s < 2 && <div className={`h-0.5 w-full mt-1 rounded-full ${step > s ? "bg-indigo-400" : "bg-slate-200"}`} />}
                 </div>
               </div>
             ))}
@@ -114,7 +122,8 @@ export function Register() {
                   )}
                 </div>
                 <button type="submit" disabled={!email || password.length < 6}
-                  className="w-full py-4 bg-teal-600 disabled:opacity-50 text-white font-extrabold rounded-2xl mt-2 shadow-lg shadow-teal-600/25">
+                  className="w-full py-4 disabled:opacity-50 text-white font-extrabold rounded-2xl mt-2 shadow-lg"
+                  style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)", boxShadow: "0 8px 24px rgba(79,70,229,0.35)" }}>
                   Continue →
                 </button>
               </div>
@@ -150,7 +159,8 @@ export function Register() {
                     ← Back
                   </button>
                   <button type="submit" disabled={loading || !name || !phone || !area}
-                    className="flex-1 py-3.5 bg-teal-600 disabled:opacity-50 text-white font-extrabold rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20">
+                    className="flex-1 py-3.5 disabled:opacity-50 text-white font-extrabold rounded-2xl flex items-center justify-center gap-2"
+                    style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)", boxShadow: "0 6px 20px rgba(79,70,229,0.30)" }}>
                     {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                     {loading ? "Creating…" : "Create Account"}
                   </button>
@@ -161,11 +171,13 @@ export function Register() {
 
           <p className="text-center text-xs text-slate-400 mt-6">
             Already have an account?{" "}
-            <Link to="/login" className="text-teal-600 font-bold hover:underline">Sign in</Link>
+            <Link to="/login" className="font-bold hover:underline" style={{ color: "#4f46e5" }}>Sign in</Link>
           </p>
         </div>
       </div>
-      <p className="text-center text-xs text-white/20 pb-8">AquaPure Vendor Portal · All rights reserved</p>
+      <p className="text-center text-xs pb-8 relative" style={{ color: "rgba(255,255,255,0.15)" }}>
+        AquaPure Vendor Portal · All rights reserved
+      </p>
     </div>
   );
 }

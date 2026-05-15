@@ -15,7 +15,7 @@ import { toast } from "sonner";
 const STATUS_COLOR: Record<string, string> = {
   pending:    "bg-amber-100 text-amber-700",
   confirmed:  "bg-blue-100 text-blue-700",
-  in_transit: "bg-purple-100 text-purple-700",
+  in_transit: "bg-violet-100 text-violet-700",
   delivered:  "bg-emerald-100 text-emerald-700",
   cancelled:  "bg-red-100 text-red-500",
 };
@@ -40,7 +40,7 @@ function WeekChart({ orders }: { orders: VendorOrder[] }) {
           const ds = format(parseISO(o.placedAt), "yyyy-MM-dd");
           const day = arr.find((d) => d.date === ds);
           if (day) day.amount += o.total;
-        } catch { /* skip invalid */ }
+        } catch { /* skip */ }
       });
     return arr;
   }, [orders]);
@@ -58,7 +58,9 @@ function WeekChart({ orders }: { orders: VendorOrder[] }) {
               <div
                 style={{ height: barH }}
                 className={`w-full rounded-t-md transition-all duration-500 ${
-                  day.today ? "bg-teal-500" : day.amount > 0 ? "bg-teal-200" : "bg-slate-100"
+                  day.today
+                    ? "bg-gradient-to-t from-indigo-600 to-violet-500"
+                    : day.amount > 0 ? "bg-indigo-200" : "bg-slate-100"
                 }`}
               />
             </div>
@@ -68,7 +70,7 @@ function WeekChart({ orders }: { orders: VendorOrder[] }) {
       <div className="flex gap-1.5 mt-1.5">
         {days.map((day) => (
           <div key={day.date} className="flex-1 text-center">
-            <span className={`text-[9px] font-bold ${day.today ? "text-teal-600" : "text-slate-400"}`}>
+            <span className={`text-[9px] font-bold ${day.today ? "text-indigo-600" : "text-slate-400"}`}>
               {day.label}
             </span>
           </div>
@@ -93,12 +95,10 @@ export function Dashboard() {
     return unsub;
   }, [vendor?.id]);
 
-  // Orders assigned to this vendor
   const myOrders = useMemo(() =>
     orders.filter((o) => o.vendorId === vendor?.id),
     [orders, vendor?.id]);
 
-  // Unassigned pending orders any vendor can claim
   const newOrders = useMemo(() =>
     orders.filter((o) => !o.vendorId && o.status === "pending"),
     [orders]);
@@ -170,25 +170,29 @@ export function Dashboard() {
 
   return (
     <div className="animate-fade-in">
-      {/* ── Header ── */}
-      <div className="bg-gradient-to-br from-teal-600 via-teal-600 to-emerald-700 pt-safe px-4 pt-4 pb-6">
-        <div className="flex items-center justify-between mb-5">
+      {/* ── Rich Header ── */}
+      <div className="relative bg-gradient-to-br from-[#0f0c29] via-[#1a1260] to-[#2d1fa3] pt-safe px-4 pt-4 pb-8 overflow-hidden">
+        {/* Decorative circles */}
+        <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-violet-500/15 blur-2xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-24 h-24 rounded-full bg-indigo-400/10 blur-xl pointer-events-none" />
+
+        <div className="relative flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-sm font-extrabold text-white shrink-0">
+            <div className="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center text-sm font-extrabold text-white border border-white/10 shrink-0">
               {initials}
             </div>
             <div>
-              <p className="text-xs text-teal-200 font-medium">{greeting}</p>
+              <p className="text-xs text-indigo-300 font-medium">{greeting}</p>
               <p className="text-base font-extrabold text-white">{vendor?.name ?? "Vendor"}</p>
             </div>
           </div>
           <button
             onClick={() => navigate("/orders")}
-            className="relative w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center"
+            className="relative w-10 h-10 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center"
           >
-            <Bell className="h-4.5 w-4.5 text-white" />
+            <Bell className="h-[18px] w-[18px] text-white" />
             {newOrders.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] font-extrabold text-white flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 rounded-full text-[10px] font-extrabold text-white flex items-center justify-center">
                 {newOrders.length}
               </span>
             )}
@@ -199,38 +203,38 @@ export function Dashboard() {
         <button
           onClick={toggleOpen}
           disabled={toggling}
-          className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl transition-all border ${
+          className={`relative w-full flex items-center justify-between px-4 py-3 rounded-2xl transition-all border ${
             vendor?.isOpen
-              ? "bg-white/15 border-white/25"
-              : "bg-red-500/25 border-red-400/30"
+              ? "bg-white/10 border-white/15"
+              : "bg-rose-500/20 border-rose-400/25"
           }`}
         >
           <div className="flex items-center gap-2.5">
-            <span className={`w-2.5 h-2.5 rounded-full ${vendor?.isOpen ? "bg-emerald-400 live-dot" : "bg-red-400"}`} />
+            <span className={`w-2.5 h-2.5 rounded-full ${vendor?.isOpen ? "bg-emerald-400 live-dot" : "bg-rose-400"}`} />
             <div className="text-left">
               <p className="text-sm font-extrabold text-white leading-none">
                 {vendor?.isOpen ? "Open for Orders" : "Store Closed"}
               </p>
-              <p className="text-[10px] text-white/60 mt-0.5">
+              <p className="text-[10px] text-white/50 mt-0.5">
                 {vendor?.isOpen ? "Customers can place orders" : "Tap to open your store"}
               </p>
             </div>
           </div>
           {vendor?.isOpen
             ? <ToggleRight className="h-6 w-6 text-emerald-300 shrink-0" />
-            : <ToggleLeft  className="h-6 w-6 text-red-300 shrink-0" />
+            : <ToggleLeft  className="h-6 w-6 text-rose-300 shrink-0" />
           }
         </button>
       </div>
 
       {/* ── Today Stats ── */}
-      <div className="px-4 -mt-3 grid grid-cols-3 gap-2.5 mb-4">
+      <div className="px-4 -mt-4 grid grid-cols-3 gap-2.5 mb-4">
         {[
-          { label: "Today's Orders", value: String(todayOrders.length), icon: ShoppingBag, bg: "bg-blue-50", ic: "text-blue-500" },
-          { label: "Revenue Today",  value: `₹${todayRevenue}`,         icon: TrendingUp,  bg: "bg-teal-50",  ic: "text-teal-600" },
-          { label: "Litres Deliv.",  value: `${todayLitres}L`,          icon: Droplets,    bg: "bg-violet-50",ic: "text-violet-500" },
+          { label: "Today's Orders", value: String(todayOrders.length),  icon: ShoppingBag, bg: "bg-orange-50",  ic: "text-orange-500",  border: "border-orange-100" },
+          { label: "Revenue Today",  value: `₹${todayRevenue}`,          icon: TrendingUp,  bg: "bg-emerald-50", ic: "text-emerald-600", border: "border-emerald-100" },
+          { label: "Litres Deliv.",  value: `${todayLitres}L`,           icon: Droplets,    bg: "bg-blue-50",    ic: "text-blue-500",    border: "border-blue-100"   },
         ].map((s) => (
-          <div key={s.label} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+          <div key={s.label} className={`bg-white rounded-2xl shadow-md border ${s.border} p-3`}>
             <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center mb-2`}>
               <s.icon className={`h-4 w-4 ${s.ic}`} strokeWidth={1.8} />
             </div>
@@ -256,7 +260,7 @@ export function Dashboard() {
               </div>
             </div>
             {newOrders.slice(0, 2).map((order) => (
-              <div key={order.id} className="bg-white rounded-xl p-3 mb-2 border border-amber-100">
+              <div key={order.id} className="bg-white rounded-xl p-3 mb-2 border border-amber-100 shadow-sm">
                 <div className="flex items-start justify-between mb-2">
                   <div>
                     <p className="text-xs font-extrabold text-slate-900">{order.customer}</p>
@@ -268,7 +272,7 @@ export function Dashboard() {
                   <button
                     disabled={acting === order.id}
                     onClick={() => handleAccept(order.id)}
-                    className="flex-1 py-1.5 bg-teal-600 text-white text-xs font-extrabold rounded-lg flex items-center justify-center gap-1 disabled:opacity-60"
+                    className="flex-1 py-1.5 bg-emerald-600 text-white text-xs font-extrabold rounded-lg flex items-center justify-center gap-1 disabled:opacity-60"
                   >
                     <CheckCircle2 className="h-3 w-3" /> Accept
                   </button>
@@ -302,7 +306,7 @@ export function Dashboard() {
             </div>
             <div className="text-right">
               <p className="text-[11px] text-slate-400 font-medium">Pending Payout</p>
-              <p className="text-lg font-extrabold text-teal-600">₹{summary.pendingPayout.toLocaleString()}</p>
+              <p className="text-lg font-extrabold text-indigo-600">₹{summary.pendingPayout.toLocaleString()}</p>
             </div>
           </div>
           <WeekChart orders={myOrders} />
@@ -319,7 +323,7 @@ export function Dashboard() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-extrabold text-slate-900">Recent Orders</h3>
-            <button onClick={() => navigate("/orders")} className="flex items-center gap-0.5 text-xs font-bold text-teal-600">
+            <button onClick={() => navigate("/orders")} className="flex items-center gap-0.5 text-xs font-bold text-indigo-600">
               See all <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -339,18 +343,13 @@ export function Dashboard() {
                 let timeStr = "";
                 try { timeStr = format(parseISO(order.placedAt), "h:mm a"); } catch { /* skip */ }
                 return (
-                  <div
-                    key={order.id}
-                    className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4"
-                  >
+                  <div key={order.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
                     <div
                       className="flex items-start justify-between cursor-pointer active:opacity-75"
                       onClick={() => navigate("/orders")}
                     >
                       <div className="flex-1 min-w-0 mr-3">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <p className="text-sm font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</p>
-                        </div>
+                        <p className="text-sm font-extrabold text-slate-900 mb-0.5">#{order.id.slice(-6).toUpperCase()}</p>
                         <p className="text-xs text-slate-500 truncate">{order.customer} · {order.items}</p>
                       </div>
                       <div className="text-right shrink-0">
@@ -366,7 +365,7 @@ export function Dashboard() {
                       <button
                         disabled={acting === order.id}
                         onClick={() => handleAdvance(order)}
-                        className="w-full py-1.5 bg-teal-50 border border-teal-200 text-teal-700 text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60"
+                        className="w-full py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60"
                       >
                         <Truck className="h-3 w-3" />
                         {order.status === "confirmed" ? "Mark Out for Delivery" : "Mark as Delivered"}

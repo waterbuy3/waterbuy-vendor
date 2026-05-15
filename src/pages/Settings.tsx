@@ -24,7 +24,7 @@ function SectionEditor({ title, onClose, children, onSave, saving }: {
 }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-backdrop" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-backdrop" onClick={onClose} />
       <div className="relative bg-white rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col animate-slide-up">
         <div className="flex justify-center pt-3 shrink-0">
           <div className="w-10 h-1 bg-slate-200 rounded-full" />
@@ -43,7 +43,7 @@ function SectionEditor({ title, onClose, children, onSave, saving }: {
           <button
             onClick={onSave}
             disabled={saving}
-            className="flex-1 py-3 bg-teal-600 text-white text-sm font-extrabold rounded-2xl disabled:opacity-60 flex items-center justify-center gap-2"
+            className="flex-1 py-3 bg-indigo-600 text-white text-sm font-extrabold rounded-2xl disabled:opacity-60 flex items-center justify-center gap-2 shadow-md shadow-indigo-200"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save Changes
@@ -72,7 +72,7 @@ export function Settings() {
     setBank({ bankName: vendor.bankName, bankAccount: vendor.bankAccount, bankIfsc: vendor.bankIfsc });
   }, [vendor?.id]);
 
-  const inp = "w-full px-4 py-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:bg-white transition-all";
+  const inp = "w-full px-4 py-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white transition-all";
 
   const saveProfile = async () => {
     if (!vendor) return;
@@ -137,30 +137,31 @@ export function Settings() {
       </div>
 
       <div className="px-4 py-4 space-y-4">
-        {/* Business card */}
-        <div className="bg-gradient-to-br from-teal-600 to-emerald-700 rounded-2xl p-5 flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center text-xl font-extrabold text-white shrink-0">
+        {/* Business card — rich gradient */}
+        <div className="relative bg-gradient-to-br from-[#0f0c29] via-[#1a1260] to-[#2d1fa3] rounded-2xl p-5 flex items-center gap-4 overflow-hidden">
+          <div className="absolute -top-4 -right-4 w-24 h-24 rounded-full bg-violet-500/20 blur-xl pointer-events-none" />
+          <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/10 flex items-center justify-center text-xl font-extrabold text-white shrink-0">
             {initials}
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="relative flex-1 min-w-0">
             <p className="text-lg font-extrabold text-white truncate">{vendor?.name ?? "Your Business"}</p>
-            <p className="text-sm text-teal-200 truncate">{user?.email}</p>
+            <p className="text-sm text-indigo-300 truncate">{user?.email}</p>
             <div className="flex items-center gap-2 mt-1.5">
-              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${vendor?.isOpen ? "bg-emerald-400/30 text-emerald-200" : "bg-red-400/30 text-red-200"}`}>
+              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${vendor?.isOpen ? "bg-emerald-400/30 text-emerald-200" : "bg-rose-400/30 text-rose-200"}`}>
                 {vendor?.isOpen ? "Open" : "Closed"}
               </span>
               {vendor?.commissionPct !== undefined && (
-                <span className="flex items-center gap-0.5 text-[10px] text-teal-200 font-medium">
+                <span className="flex items-center gap-0.5 text-[10px] text-indigo-300 font-medium">
                   <Percent className="h-2.5 w-2.5" />{vendor.commissionPct}% fee
                 </span>
               )}
-              <span className="text-[10px] text-teal-300 font-medium">
+              <span className="text-[10px] text-indigo-400 font-medium">
                 {vendor?.createdAt ? `Since ${format(new Date(vendor.createdAt), "MMM yyyy")}` : ""}
               </span>
             </div>
           </div>
-          <div className="shrink-0">
-            <Droplets className="h-8 w-8 text-white/30" strokeWidth={1.5} />
+          <div className="relative shrink-0">
+            <Droplets className="h-8 w-8 text-white/20" strokeWidth={1.5} />
           </div>
         </div>
 
@@ -175,10 +176,10 @@ export function Settings() {
             className="w-full flex items-center justify-between px-4 py-4"
           >
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${vendor?.isOpen ? "bg-emerald-50" : "bg-red-50"}`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${vendor?.isOpen ? "bg-emerald-50" : "bg-rose-50"}`}>
                 {vendor?.isOpen
                   ? <ToggleRight className="h-5 w-5 text-emerald-600" />
-                  : <ToggleLeft  className="h-5 w-5 text-red-500" />
+                  : <ToggleLeft  className="h-5 w-5 text-rose-500" />
                 }
               </div>
               <div className="text-left">
@@ -202,7 +203,6 @@ export function Settings() {
             <p className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Business</p>
           </div>
 
-          {/* Business Profile row */}
           <button
             onClick={() => setOpenSection("profile")}
             className="w-full flex items-center gap-3 px-4 py-4 border-b border-slate-50 active:bg-slate-50 transition-colors"
@@ -217,13 +217,12 @@ export function Settings() {
             <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
           </button>
 
-          {/* Bank details row */}
           <button
             onClick={() => setOpenSection("bank")}
             className="w-full flex items-center gap-3 px-4 py-4 active:bg-slate-50 transition-colors"
           >
-            <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
-              <Landmark className="h-5 w-5 text-teal-600" />
+            <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center shrink-0">
+              <Landmark className="h-5 w-5 text-violet-600" />
             </div>
             <div className="flex-1 text-left min-w-0">
               <p className="text-sm font-extrabold text-slate-900">Bank Details</p>
@@ -241,7 +240,6 @@ export function Settings() {
             <p className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Account</p>
           </div>
 
-          {/* Email (readonly) */}
           <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-50">
             <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center shrink-0">
               <Phone className="h-5 w-5 text-slate-500" />
@@ -252,13 +250,12 @@ export function Settings() {
             </div>
           </div>
 
-          {/* Change password */}
           <button
             onClick={() => setOpenSection("password")}
             className="w-full flex items-center gap-3 px-4 py-4 border-b border-slate-50 active:bg-slate-50 transition-colors"
           >
-            <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center shrink-0">
-              <KeyRound className="h-5 w-5 text-violet-600" />
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <KeyRound className="h-5 w-5 text-indigo-600" />
             </div>
             <div className="flex-1 text-left">
               <p className="text-sm font-extrabold text-slate-900">Change Password</p>
@@ -267,7 +264,6 @@ export function Settings() {
             <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
           </button>
 
-          {/* Sign out */}
           <button
             onClick={signOut}
             className="w-full flex items-center gap-3 px-4 py-4 active:bg-red-50 transition-colors"
@@ -284,7 +280,7 @@ export function Settings() {
 
         {/* App info */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0">
             <Droplets className="h-5 w-5 text-white" strokeWidth={2.5} />
           </div>
           <div>

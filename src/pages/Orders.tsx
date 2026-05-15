@@ -18,7 +18,7 @@ type Tab = (typeof TABS)[number];
 const STATUS_META: Record<string, { label: string; bg: string; text: string }> = {
   pending:    { label: "New",        bg: "bg-amber-100",   text: "text-amber-700"   },
   confirmed:  { label: "Confirmed",  bg: "bg-blue-100",    text: "text-blue-700"    },
-  in_transit: { label: "In Transit", bg: "bg-purple-100",  text: "text-purple-700"  },
+  in_transit: { label: "In Transit", bg: "bg-violet-100",  text: "text-violet-700"  },
   delivered:  { label: "Delivered",  bg: "bg-emerald-100", text: "text-emerald-700" },
   cancelled:  { label: "Cancelled",  bg: "bg-red-100",     text: "text-red-600"     },
 };
@@ -79,7 +79,7 @@ function OrderDetailSheet({ order, onClose, onAction }: {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-backdrop" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-backdrop" onClick={onClose} />
       <div className="relative bg-white rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col animate-slide-up">
         {/* Handle */}
         <div className="flex justify-center pt-3 pb-1 shrink-0">
@@ -120,16 +120,16 @@ function OrderDetailSheet({ order, onClose, onAction }: {
                     <div key={step.key} className="flex items-center flex-1">
                       <div className="flex flex-col items-center gap-1">
                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-extrabold border-2 transition-all ${
-                          done ? "bg-teal-500 border-teal-500 text-white" : "bg-white border-slate-200 text-slate-400"
-                        } ${current ? "ring-2 ring-teal-200 ring-offset-1" : ""}`}>
+                          done ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-200 text-slate-400"
+                        } ${current ? "ring-2 ring-indigo-200 ring-offset-1" : ""}`}>
                           {done ? "✓" : i + 1}
                         </div>
-                        <span className={`text-[9px] font-bold text-center leading-tight ${done ? "text-teal-600" : "text-slate-400"}`}>
+                        <span className={`text-[9px] font-bold text-center leading-tight ${done ? "text-indigo-600" : "text-slate-400"}`}>
                           {step.label}
                         </span>
                       </div>
                       {i < ORDER_STEPS.length - 1 && (
-                        <div className={`flex-1 h-0.5 mx-1 mb-4 ${done && i < stepIdx ? "bg-teal-400" : "bg-slate-200"}`} />
+                        <div className={`flex-1 h-0.5 mx-1 mb-4 ${done && i < stepIdx ? "bg-indigo-400" : "bg-slate-200"}`} />
                       )}
                     </div>
                   );
@@ -143,8 +143,8 @@ function OrderDetailSheet({ order, onClose, onAction }: {
             <p className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Customer</p>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-teal-100 flex items-center justify-center shrink-0">
-                  <span className="text-sm font-extrabold text-teal-700">{order.customer?.[0]?.toUpperCase() ?? "C"}</span>
+                <div className="w-9 h-9 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
+                  <span className="text-sm font-extrabold text-indigo-700">{order.customer?.[0]?.toUpperCase() ?? "C"}</span>
                 </div>
                 <div>
                   <p className="text-sm font-extrabold text-slate-900">{order.customer}</p>
@@ -181,7 +181,7 @@ function OrderDetailSheet({ order, onClose, onAction }: {
               href={mapsLink}
               target="_blank"
               rel="noreferrer"
-              className="mt-3 flex items-center gap-1.5 text-xs font-bold text-teal-600 bg-teal-50 border border-teal-100 rounded-xl px-3 py-2 w-fit"
+              className="mt-3 flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 w-fit"
             >
               <MapPin className="h-3.5 w-3.5" /> Open in Maps
             </a>
@@ -213,7 +213,11 @@ function OrderDetailSheet({ order, onClose, onAction }: {
             <button
               disabled={acting}
               onClick={() => doAction(order.status === "pending" ? "accept" : "advance")}
-              className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-sm font-extrabold rounded-2xl flex items-center justify-center gap-2 transition-colors"
+              className={`w-full py-3.5 disabled:opacity-60 text-white text-sm font-extrabold rounded-2xl flex items-center justify-center gap-2 transition-colors ${
+                order.status === "pending"
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : "bg-indigo-600 hover:bg-indigo-700"
+              }`}
             >
               <Truck className="h-4 w-4" />
               {NEXT_LABEL[order.status] ?? "Advance"}
@@ -306,7 +310,7 @@ export function Orders() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search orders, customers…"
-            className="w-full pl-9 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:bg-white transition-all"
+            className="w-full pl-9 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white transition-all"
           />
         </div>
 
@@ -320,7 +324,9 @@ export function Orders() {
                 key={t}
                 onClick={() => setTab(t)}
                 className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
-                  active ? "bg-teal-600 text-white shadow-sm" : "bg-slate-100 text-slate-500"
+                  active
+                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-200"
+                    : "bg-slate-100 text-slate-500"
                 }`}
               >
                 {t}{count > 0 ? ` (${count})` : ""}
@@ -342,7 +348,8 @@ export function Orders() {
         ) : (
           visible.map((order) => {
             const meta = STATUS_META[order.status] ?? STATUS_META.pending;
-            const isNew = order.status === "pending";
+            const isNew = order.status === "pending" && !order.vendorId;
+            const isActive = order.status === "confirmed" || order.status === "in_transit";
             return (
               <button
                 key={order.id}
@@ -381,7 +388,7 @@ export function Orders() {
                   <div className="flex gap-2 mt-3">
                     <button
                       onClick={(e) => { e.stopPropagation(); handleAction("accept", order.id); }}
-                      className="flex-1 py-2 bg-teal-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5"
+                      className="flex-1 py-2 bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5"
                     >
                       <CheckCircle2 className="h-3.5 w-3.5" /> Accept
                     </button>
@@ -394,11 +401,11 @@ export function Orders() {
                   </div>
                 )}
 
-                {!isNew && order.status !== "delivered" && order.status !== "cancelled" && (
+                {isActive && (
                   <div className="mt-3">
                     <button
                       onClick={(e) => { e.stopPropagation(); handleAction("advance", order.id); }}
-                      className="w-full py-2 bg-slate-50 text-slate-700 text-xs font-extrabold rounded-xl border border-slate-200 flex items-center justify-center gap-1.5"
+                      className="w-full py-2 bg-indigo-50 text-indigo-700 text-xs font-extrabold rounded-xl border border-indigo-200 flex items-center justify-center gap-1.5"
                     >
                       <Truck className="h-3.5 w-3.5" /> {NEXT_LABEL[order.status] ?? "Advance"}
                     </button>

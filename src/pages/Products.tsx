@@ -39,11 +39,11 @@ function ProductSheet({ product, vendorId, onClose }: {
     finally { setSaving(false); }
   };
 
-  const inp = "w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:bg-white transition-all";
+  const inp = "w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white transition-all";
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-backdrop" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-backdrop" onClick={onClose} />
       <div className="relative bg-white rounded-t-3xl shadow-2xl max-h-[95vh] flex flex-col animate-slide-up">
         <div className="flex justify-center pt-3 shrink-0">
           <div className="w-10 h-1 bg-slate-200 rounded-full" />
@@ -174,15 +174,15 @@ function ProductSheet({ product, vendorId, onClose }: {
             type="button"
             onClick={() => upd({ active: !form.active })}
             className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all ${
-              form.active ? "bg-teal-50 border-teal-200" : "bg-slate-50 border-slate-200"
+              form.active ? "bg-indigo-50 border-indigo-200" : "bg-slate-50 border-slate-200"
             }`}
           >
             <div>
-              <p className={`text-sm font-extrabold ${form.active ? "text-teal-700" : "text-slate-500"}`}>
+              <p className={`text-sm font-extrabold ${form.active ? "text-indigo-700" : "text-slate-500"}`}>
                 {form.active ? "Active — visible to customers" : "Inactive — hidden from customers"}
               </p>
             </div>
-            <div className={`w-12 h-6 rounded-full relative transition-all ${form.active ? "bg-teal-500" : "bg-slate-300"}`}>
+            <div className={`w-12 h-6 rounded-full relative transition-all ${form.active ? "bg-indigo-600" : "bg-slate-300"}`}>
               <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${form.active ? "left-6" : "left-0.5"}`} />
             </div>
           </button>
@@ -195,7 +195,7 @@ function ProductSheet({ product, vendorId, onClose }: {
           <button
             onClick={save}
             disabled={saving || !form.name?.trim()}
-            className="flex-1 py-3 bg-teal-600 text-white text-sm font-extrabold rounded-2xl disabled:opacity-60 flex items-center justify-center gap-2"
+            className="flex-1 py-3 bg-indigo-600 text-white text-sm font-extrabold rounded-2xl disabled:opacity-60 flex items-center justify-center gap-2 shadow-md shadow-indigo-200"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {form.id ? "Update" : "Add Product"}
@@ -250,7 +250,7 @@ export function Products() {
           </div>
           <button
             onClick={() => setEditing({ ...EMPTY })}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-teal-600 text-white text-sm font-extrabold rounded-xl shadow-sm"
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white text-sm font-extrabold rounded-xl shadow-md shadow-indigo-200"
           >
             <Plus className="h-4 w-4" /> Add
           </button>
@@ -262,7 +262,7 @@ export function Products() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search products…"
-            className="w-full pl-9 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all"
+            className="w-full pl-9 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
           />
         </div>
 
@@ -272,7 +272,9 @@ export function Products() {
               key={f}
               onClick={() => setFilter(f)}
               className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
-                filter === f ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-500"
+                filter === f
+                  ? "bg-indigo-600 text-white shadow-sm shadow-indigo-200"
+                  : "bg-slate-100 text-slate-500"
               }`}
             >
               {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -291,7 +293,7 @@ export function Products() {
             {!query && (
               <button
                 onClick={() => setEditing({ ...EMPTY })}
-                className="mt-4 px-5 py-2.5 bg-teal-600 text-white text-sm font-extrabold rounded-xl"
+                className="mt-4 px-5 py-2.5 bg-indigo-600 text-white text-sm font-extrabold rounded-xl"
               >
                 Add your first product
               </button>
@@ -306,12 +308,11 @@ export function Products() {
                   className="w-full flex items-center gap-3 p-4 text-left"
                   onClick={() => setExpanded(isExpanded ? null : p.id)}
                 >
-                  {/* Icon / Image */}
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden ${p.active ? "bg-teal-50" : "bg-slate-100"}`}>
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden ${p.active ? "bg-indigo-50" : "bg-slate-100"}`}>
                     {p.imageUrl ? (
                       <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                     ) : (
-                      <Droplets className={`h-5 w-5 ${p.active ? "text-teal-400" : "text-slate-300"}`} />
+                      <Droplets className={`h-5 w-5 ${p.active ? "text-indigo-400" : "text-slate-300"}`} />
                     )}
                   </div>
 
@@ -319,7 +320,7 @@ export function Products() {
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <p className="text-sm font-extrabold text-slate-900 truncate">{p.name}</p>
                       {p.badge && (
-                        <span className="text-[9px] font-extrabold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded-full shrink-0">{p.badge}</span>
+                        <span className="text-[9px] font-extrabold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full shrink-0">{p.badge}</span>
                       )}
                       {!p.active && (
                         <span className="text-[9px] font-extrabold bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded-full shrink-0">OFF</span>
@@ -363,13 +364,13 @@ export function Products() {
                     <button
                       onClick={() => toggle(p.id, !p.active)}
                       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all ${
-                        p.active ? "bg-teal-50 border-teal-200" : "bg-slate-50 border-slate-200"
+                        p.active ? "bg-indigo-50 border-indigo-200" : "bg-slate-50 border-slate-200"
                       }`}
                     >
-                      <span className={`text-xs font-extrabold ${p.active ? "text-teal-700" : "text-slate-500"}`}>
+                      <span className={`text-xs font-extrabold ${p.active ? "text-indigo-700" : "text-slate-500"}`}>
                         {p.active ? "Active" : "Inactive"}
                       </span>
-                      <div className={`w-10 h-5 rounded-full relative transition-all ${p.active ? "bg-teal-500" : "bg-slate-300"}`}>
+                      <div className={`w-10 h-5 rounded-full relative transition-all ${p.active ? "bg-indigo-600" : "bg-slate-300"}`}>
                         <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${p.active ? "left-5" : "left-0.5"}`} />
                       </div>
                     </button>

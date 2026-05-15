@@ -58,7 +58,7 @@ function RevenueBar({ orders, period }: { orders: VendorOrder[]; period: Period 
               <div
                 style={{ height: barH }}
                 className={`w-full rounded-t-sm transition-all duration-500 ${
-                  day.amount > 0 ? "bg-teal-400" : "bg-slate-100"
+                  day.amount > 0 ? "bg-white/70" : "bg-white/20"
                 }`}
               />
             </div>
@@ -69,7 +69,7 @@ function RevenueBar({ orders, period }: { orders: VendorOrder[]; period: Period 
         {days.map((day, i) => (
           <div key={i} className="flex-1 text-center">
             {day.label && (
-              <span className="text-[8px] font-semibold text-slate-400">{day.label}</span>
+              <span className="text-[8px] font-semibold text-white/60">{day.label}</span>
             )}
           </div>
         ))}
@@ -123,7 +123,9 @@ export function Earnings() {
               key={p.key}
               onClick={() => setPeriod(p.key)}
               className={`flex-1 py-2 rounded-xl text-xs font-extrabold transition-all ${
-                period === p.key ? "bg-teal-600 text-white shadow-sm" : "bg-slate-100 text-slate-500"
+                period === p.key
+                  ? "bg-indigo-600 text-white shadow-sm shadow-indigo-200"
+                  : "bg-slate-100 text-slate-500"
               }`}
             >
               {p.label}
@@ -133,15 +135,17 @@ export function Earnings() {
       </div>
 
       <div className="px-4 py-4 space-y-4">
-        {/* Revenue card */}
-        <div className="bg-gradient-to-br from-teal-600 via-teal-600 to-emerald-700 rounded-2xl p-5 shadow-lg">
-          <p className="text-xs font-extrabold text-teal-200 uppercase tracking-wider mb-1">
+        {/* Revenue card — rich multi-color gradient */}
+        <div className="relative bg-gradient-to-br from-violet-700 via-indigo-700 to-blue-700 rounded-2xl p-5 shadow-xl shadow-indigo-300/40 overflow-hidden">
+          <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-20 h-20 rounded-full bg-violet-400/20 blur-xl pointer-events-none" />
+          <p className="relative text-xs font-extrabold text-indigo-200 uppercase tracking-wider mb-1">
             {PERIODS.find((p) => p.key === period)?.label} Revenue
           </p>
-          <p className="text-4xl font-extrabold text-white mb-1">₹{periodRevenue.toLocaleString()}</p>
-          <p className="text-sm text-teal-200">{periodOrders.length} orders · {periodLitres}L delivered</p>
+          <p className="relative text-4xl font-extrabold text-white mb-1">₹{periodRevenue.toLocaleString()}</p>
+          <p className="relative text-sm text-indigo-200">{periodOrders.length} orders · {periodLitres}L delivered</p>
 
-          <div className="mt-4">
+          <div className="relative mt-4">
             <RevenueBar orders={orders} period={period} />
           </div>
         </div>
@@ -149,12 +153,12 @@ export function Earnings() {
         {/* All-time stats */}
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: "Gross Revenue",   value: `₹${summary.totalRevenue.toLocaleString()}`, icon: TrendingUp,  bg: "bg-blue-50",    ic: "text-blue-500"   },
-            { label: "Your Earnings",   value: `₹${vendorShare.toFixed(0)}`,                icon: Wallet,      bg: "bg-teal-50",    ic: "text-teal-600"   },
-            { label: "Orders Done",     value: String(summary.totalOrders),                  icon: ShoppingBag, bg: "bg-emerald-50", ic: "text-emerald-600"},
-            { label: "Water Delivered", value: `${summary.totalLitres}L`,                   icon: Droplets,    bg: "bg-violet-50",  ic: "text-violet-600" },
+            { label: "Gross Revenue",   value: `₹${summary.totalRevenue.toLocaleString()}`, icon: TrendingUp,  bg: "bg-blue-50",    ic: "text-blue-500",    border: "border-blue-100"    },
+            { label: "Your Earnings",   value: `₹${vendorShare.toFixed(0)}`,                icon: Wallet,      bg: "bg-violet-50",  ic: "text-violet-600",  border: "border-violet-100"  },
+            { label: "Orders Done",     value: String(summary.totalOrders),                  icon: ShoppingBag, bg: "bg-orange-50",  ic: "text-orange-500",  border: "border-orange-100"  },
+            { label: "Water Delivered", value: `${summary.totalLitres}L`,                   icon: Droplets,    bg: "bg-emerald-50", ic: "text-emerald-600", border: "border-emerald-100" },
           ].map((s) => (
-            <div key={s.label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+            <div key={s.label} className={`bg-white rounded-2xl border ${s.border} shadow-sm p-4`}>
               <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center mb-2`}>
                 <s.icon className={`h-4 w-4 ${s.ic}`} strokeWidth={1.8} />
               </div>
@@ -165,14 +169,14 @@ export function Earnings() {
         </div>
 
         {/* Pending payout */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-indigo-50 to-violet-50 rounded-2xl border border-indigo-100 shadow-sm p-4 flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500 font-medium mb-0.5">Pending Payout</p>
             <p className="text-2xl font-extrabold text-slate-900">₹{summary.pendingPayout.toFixed(0)}</p>
             <p className="text-xs text-slate-400 mt-1">Platform keeps {summary.commissionPct}% · you keep {100 - summary.commissionPct}%</p>
           </div>
-          <div className="w-14 h-14 rounded-2xl bg-teal-50 flex items-center justify-center">
-            <Wallet className="h-7 w-7 text-teal-500" strokeWidth={1.6} />
+          <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center">
+            <Wallet className="h-7 w-7 text-indigo-600" strokeWidth={1.6} />
           </div>
         </div>
 
@@ -192,8 +196,8 @@ export function Earnings() {
                   <div className="flex items-center gap-3">
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${p.status === "paid" ? "bg-emerald-50" : "bg-amber-50"}`}>
                       {p.status === "paid"
-                        ? <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600" />
-                        : <Clock className="h-4.5 w-4.5 text-amber-600" />
+                        ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        : <Clock className="h-4 w-4 text-amber-600" />
                       }
                     </div>
                     <div>
@@ -225,7 +229,7 @@ export function Earnings() {
           </div>
           <p className="text-xs text-slate-500 leading-relaxed">
             AquaPure takes <span className="font-bold text-slate-700">{summary.commissionPct}%</span> of each delivered order as a platform fee.
-            Your earnings are <span className="font-bold text-teal-600">{100 - summary.commissionPct}%</span> of all revenue.
+            Your earnings are <span className="font-bold text-indigo-600">{100 - summary.commissionPct}%</span> of all revenue.
             Payouts are processed on a weekly cycle.
           </p>
         </div>

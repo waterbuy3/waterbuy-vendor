@@ -20,27 +20,27 @@ export function BottomNav({ newOrdersCount }: { newOrdersCount: number }) {
             end={tab.exact}
             className={({ isActive }) =>
               `flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors ${
-                isActive ? "text-teal-600" : "text-slate-400"
+                isActive ? "text-indigo-600" : "text-slate-400"
               }`
             }
           >
             {({ isActive }) => (
               <>
                 {isActive && (
-                  <span className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-[2.5px] bg-teal-500 rounded-full" />
+                  <span className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-[2.5px] bg-indigo-500 rounded-full" />
                 )}
-                <div className={`relative p-1.5 rounded-xl transition-all duration-150 ${isActive ? "bg-teal-50" : ""}`}>
+                <div className={`relative p-1.5 rounded-xl transition-all duration-150 ${isActive ? "bg-indigo-50" : ""}`}>
                   <tab.icon
-                    className={`h-[21px] w-[21px] transition-all ${isActive ? "text-teal-600" : "text-slate-400"}`}
+                    className={`h-[21px] w-[21px] transition-all ${isActive ? "text-indigo-600" : "text-slate-400"}`}
                     strokeWidth={isActive ? 2.3 : 1.7}
                   />
                   {tab.badge && newOrdersCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center px-[3px] leading-none">
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-rose-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center px-[3px] leading-none">
                       {newOrdersCount > 9 ? "9+" : newOrdersCount}
                     </span>
                   )}
                 </div>
-                <span className={`text-[10px] font-semibold leading-none ${isActive ? "text-teal-600" : "text-slate-400"}`}>
+                <span className={`text-[10px] font-semibold leading-none ${isActive ? "text-indigo-600" : "text-slate-400"}`}>
                   {tab.label}
                 </span>
               </>
