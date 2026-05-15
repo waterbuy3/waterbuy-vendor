@@ -195,6 +195,65 @@ function rowToOrder(row: Record<string, unknown>): VendorOrder {
   };
 }
 
+// Columns actually used by the app — avoids SELECT * overhead
+const ORDER_COLS = "id,user_id,vendor_id,customer,phone,items,total,litres,payment,address,status,placed_at,delivered_at";
+
+/** Vendor's own orders — realtime, limited to 200 most recent. */
+export function subscribeMyOrders(
+  vendorId: string,
+  callback: (orders: VendorOrder[]) => void
+): () => void {
+  if (!supabase) { callback([]); return () => {}; }
+
+  const fetch = async () => {
+    const { data } = await supabase!
+      .from("orders")
+      .select(ORDER_COLS)
+      .eq("vendor_id", vendorId)
+      .order("placed_at", { ascending: false })
+      .limit(200);
+    callback((data ?? []).map((r) => rowToOrder(r as Record<string, unknown>)));
+  };
+
+  fetch();
+
+  const channel = supabase
+    .channel(`my-orders-${vendorId}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `vendor_id=eq.${vendorId}` }, fetch)
+    .subscribe();
+
+  return () => { supabase!.removeChannel(channel); };
+}
+
+/** Unassigned pending orders a vendor can claim — limit 30, realtime on status changes. */
+export function subscribeNewOrders(
+  callback: (orders: VendorOrder[]) => void
+): () => void {
+  if (!supabase) { callback([]); return () => {}; }
+
+  const fetch = async () => {
+    const { data } = await supabase!
+      .from("orders")
+      .select(ORDER_COLS)
+      .is("vendor_id", null)
+      .eq("status", "pending")
+      .order("placed_at", { ascending: false })
+      .limit(30);
+    callback((data ?? []).map((r) => rowToOrder(r as Record<string, unknown>)));
+  };
+
+  fetch();
+
+  // Listen for any pending-status change so we catch new placements and assignments
+  const channel = supabase
+    .channel("new-orders-pending")
+    .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: "status=eq.pending" }, fetch)
+    .subscribe();
+
+  return () => { supabase!.removeChannel(channel); };
+}
+
+/** @deprecated Use subscribeMyOrders + subscribeNewOrders via VendorDataContext instead. */
 export function subscribeVendorOrders(
   vendorId: string,
   callback: (orders: VendorOrder[]) => void
@@ -202,20 +261,17 @@ export function subscribeVendorOrders(
   if (!supabase) { callback([]); return () => {}; }
 
   const fetch = async () => {
-    // Show orders assigned to this vendor OR unassigned orders (claimable)
     const { data } = await supabase!
       .from("orders")
-      .select("*")
+      .select(ORDER_COLS)
       .or(`vendor_id.eq.${vendorId},vendor_id.is.null`)
-      .order("placed_at", { ascending: false });
+      .order("placed_at", { ascending: false })
+      .limit(200);
     callback((data ?? []).map((r) => rowToOrder(r as Record<string, unknown>)));
   };
 
   fetch();
 
-  // Use a unique channel name per subscription so multiple callers
-  // (e.g. Layout for badge count + Orders page) don't share one channel
-  // and trigger "cannot add callbacks after subscribe()".
   const channelId = `vendor-orders-${vendorId}-${Math.random().toString(36).slice(2)}`;
   const channel = supabase
     .channel(channelId)

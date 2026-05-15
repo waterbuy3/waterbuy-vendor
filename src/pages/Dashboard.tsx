@@ -1,14 +1,14 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ShoppingBag, Droplets, TrendingUp, Wallet, Zap, ChevronRight,
   Bell, ToggleLeft, ToggleRight, CheckCircle2, XCircle, Clock, Truck,
 } from "lucide-react";
 import {
-  subscribeVendorOrders, getEarningSummary, updateVendorProfile,
-  acceptOrder, rejectOrder, updateOrderStatus, type VendorOrder,
+  updateVendorProfile, acceptOrder, rejectOrder, updateOrderStatus, type VendorOrder,
 } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { useVendorData } from "@/context/VendorDataContext";
 import { format, isToday, subDays, parseISO } from "date-fns";
 import { toast } from "sonner";
 
@@ -82,26 +82,10 @@ function WeekChart({ orders }: { orders: VendorOrder[] }) {
 
 export function Dashboard() {
   const { vendor, refreshVendor } = useAuth();
+  const { myOrders, newOrders, totalRevenue, totalDelivered, totalLitres, pendingPayout } = useVendorData();
   const navigate = useNavigate();
-  const [orders, setOrders] = useState<VendorOrder[]>([]);
-  const [summary, setSummary] = useState({ totalRevenue: 0, totalOrders: 0, totalLitres: 0, pendingPayout: 0, commissionPct: 10 });
   const [toggling, setToggling] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!vendor) return;
-    const unsub = subscribeVendorOrders(vendor.id, setOrders);
-    getEarningSummary(vendor.id).then(setSummary);
-    return unsub;
-  }, [vendor?.id]);
-
-  const myOrders = useMemo(() =>
-    orders.filter((o) => o.vendorId === vendor?.id),
-    [orders, vendor?.id]);
-
-  const newOrders = useMemo(() =>
-    orders.filter((o) => !o.vendorId && o.status === "pending"),
-    [orders]);
 
   const todayOrders = useMemo(() =>
     myOrders.filter((o) => { try { return isToday(parseISO(o.placedAt)); } catch { return false; } }),
@@ -302,20 +286,20 @@ export function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-[11px] text-slate-400 font-medium">Total Revenue</p>
-              <p className="text-2xl font-extrabold text-slate-900">₹{summary.totalRevenue.toLocaleString()}</p>
+              <p className="text-2xl font-extrabold text-slate-900">₹{totalRevenue.toLocaleString()}</p>
             </div>
             <div className="text-right">
               <p className="text-[11px] text-slate-400 font-medium">Pending Payout</p>
-              <p className="text-lg font-extrabold text-indigo-600">₹{summary.pendingPayout.toLocaleString()}</p>
+              <p className="text-lg font-extrabold text-indigo-600">₹{pendingPayout.toLocaleString()}</p>
             </div>
           </div>
           <WeekChart orders={myOrders} />
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-50">
             <div className="flex items-center gap-2">
               <Wallet className="h-3.5 w-3.5 text-slate-400" />
-              <span className="text-[11px] text-slate-400 font-medium">{summary.totalOrders} orders delivered</span>
+              <span className="text-[11px] text-slate-400 font-medium">{totalDelivered} orders delivered</span>
             </div>
-            <span className="text-[11px] text-slate-400 font-medium">{summary.totalLitres}L water</span>
+            <span className="text-[11px] text-slate-400 font-medium">{totalLitres}L water</span>
           </div>
         </div>
 

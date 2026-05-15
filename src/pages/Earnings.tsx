@@ -1,7 +1,8 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Wallet, TrendingUp, Droplets, ShoppingBag, Clock, CheckCircle2, ChevronRight } from "lucide-react";
-import { subscribeVendorOrders, subscribeVendorPayouts, getEarningSummary, type VendorOrder, type Payout } from "@/lib/supabase";
+import { type VendorOrder } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { useVendorData } from "@/context/VendorDataContext";
 import { format, parseISO, isToday, differenceInDays, isSameMonth } from "date-fns";
 
 type Period = "today" | "week" | "month" | "all";
@@ -94,26 +95,13 @@ function filterByPeriod(orders: VendorOrder[], period: Period): VendorOrder[] {
 
 export function Earnings() {
   const { vendor } = useAuth();
-  const [orders, setOrders] = useState<VendorOrder[]>([]);
-  const [payouts, setPayouts] = useState<Payout[]>([]);
-  const [summary, setSummary] = useState({ totalRevenue: 0, totalOrders: 0, totalLitres: 0, pendingPayout: 0, commissionPct: 10 });
+  const { myOrders, payouts, totalRevenue, totalDelivered, totalLitres, pendingPayout } = useVendorData();
   const [period, setPeriod] = useState<Period>("week");
 
-  useEffect(() => {
-    if (!vendor) return;
-    const u1 = subscribeVendorOrders(vendor.id, setOrders);
-    const u2 = subscribeVendorPayouts(vendor.id, setPayouts);
-    getEarningSummary(vendor.id).then(setSummary);
-    return () => { u1(); u2(); };
-  }, [vendor?.id]);
-
-  // Only count orders that belong to this vendor (subscribeVendorOrders also returns unassigned orders)
-  const myOrders = useMemo(() => orders.filter((o) => o.vendorId === vendor?.id), [orders, vendor?.id]);
-
-  const periodOrders = useMemo(() => filterByPeriod(myOrders, period), [myOrders, period]);
-  const periodRevenue = useMemo(() => periodOrders.reduce((s, o) => s + o.total, 0), [periodOrders]);
+  const periodOrders  = useMemo(() => filterByPeriod(myOrders, period), [myOrders, period]);
+  const periodRevenue = useMemo(() => periodOrders.reduce((s, o) => s + o.total,  0), [periodOrders]);
   const periodLitres  = useMemo(() => periodOrders.reduce((s, o) => s + o.litres, 0), [periodOrders]);
-  const vendorShare   = summary.totalRevenue * (1 - summary.commissionPct / 100);
+  const vendorShare   = totalRevenue * (1 - (vendor?.commissionPct ?? 10) / 100);
 
   return (
     <div className="animate-fade-in">
@@ -156,10 +144,10 @@ export function Earnings() {
         {/* All-time stats */}
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: "Gross Revenue",   value: `₹${summary.totalRevenue.toLocaleString()}`, icon: TrendingUp,  bg: "bg-blue-50",    ic: "text-blue-500",    border: "border-blue-100"    },
-            { label: "Your Earnings",   value: `₹${vendorShare.toFixed(0)}`,                icon: Wallet,      bg: "bg-violet-50",  ic: "text-violet-600",  border: "border-violet-100"  },
-            { label: "Orders Done",     value: String(summary.totalOrders),                  icon: ShoppingBag, bg: "bg-orange-50",  ic: "text-orange-500",  border: "border-orange-100"  },
-            { label: "Water Delivered", value: `${summary.totalLitres}L`,                   icon: Droplets,    bg: "bg-emerald-50", ic: "text-emerald-600", border: "border-emerald-100" },
+            { label: "Gross Revenue",   value: `₹${totalRevenue.toLocaleString()}`, icon: TrendingUp,  bg: "bg-blue-50",    ic: "text-blue-500",    border: "border-blue-100"    },
+            { label: "Your Earnings",   value: `₹${vendorShare.toFixed(0)}`,       icon: Wallet,      bg: "bg-violet-50",  ic: "text-violet-600",  border: "border-violet-100"  },
+            { label: "Orders Done",     value: String(totalDelivered),              icon: ShoppingBag, bg: "bg-orange-50",  ic: "text-orange-500",  border: "border-orange-100"  },
+            { label: "Water Delivered", value: `${totalLitres}L`,                  icon: Droplets,    bg: "bg-emerald-50", ic: "text-emerald-600", border: "border-emerald-100" },
           ].map((s) => (
             <div key={s.label} className={`bg-white rounded-2xl border ${s.border} shadow-sm p-4`}>
               <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center mb-2`}>
@@ -175,8 +163,8 @@ export function Earnings() {
         <div className="bg-gradient-to-r from-indigo-50 to-violet-50 rounded-2xl border border-indigo-100 shadow-sm p-4 flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500 font-medium mb-0.5">Pending Payout</p>
-            <p className="text-2xl font-extrabold text-slate-900">₹{summary.pendingPayout.toFixed(0)}</p>
-            <p className="text-xs text-slate-400 mt-1">Platform keeps {summary.commissionPct}% · you keep {100 - summary.commissionPct}%</p>
+            <p className="text-2xl font-extrabold text-slate-900">₹{pendingPayout.toFixed(0)}</p>
+            <p className="text-xs text-slate-400 mt-1">Platform keeps {vendor?.commissionPct ?? 10}% · you keep {100 - (vendor?.commissionPct ?? 10)}%</p>
           </div>
           <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center">
             <Wallet className="h-7 w-7 text-indigo-600" strokeWidth={1.6} />
@@ -231,8 +219,8 @@ export function Earnings() {
             <p className="text-xs font-extrabold text-slate-700">Commission Structure</p>
           </div>
           <p className="text-xs text-slate-500 leading-relaxed">
-            AquaPure takes <span className="font-bold text-slate-700">{summary.commissionPct}%</span> of each delivered order as a platform fee.
-            Your earnings are <span className="font-bold text-indigo-600">{100 - summary.commissionPct}%</span> of all revenue.
+            AquaPure takes <span className="font-bold text-slate-700">{vendor?.commissionPct ?? 10}%</span> of each delivered order as a platform fee.
+            Your earnings are <span className="font-bold text-indigo-600">{100 - (vendor?.commissionPct ?? 10)}%</span> of all revenue.
             Payouts are processed on a weekly cycle.
           </p>
         </div>

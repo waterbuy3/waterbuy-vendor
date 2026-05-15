@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { Droplets, Clock } from "lucide-react";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { VendorDataProvider } from "@/context/VendorDataContext";
 import { Layout } from "@/components/Layout";
 import { Login }     from "@/pages/Login";
 import { Register }  from "@/pages/Register";
@@ -60,7 +61,7 @@ function Guard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return <VendorDataProvider>{children}</VendorDataProvider>;
 }
 
 export default function App() {

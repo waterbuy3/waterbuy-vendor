@@ -1,14 +1,15 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import {
   ShoppingBag, CheckCircle2, XCircle, Truck, MapPin, Phone,
   CreditCard, Package, Droplets, X, Search, ChevronRight,
   MessageCircle, Clock,
 } from "lucide-react";
 import {
-  subscribeVendorOrders, acceptOrder, rejectOrder, updateOrderStatus,
+  acceptOrder, rejectOrder, updateOrderStatus,
   type VendorOrder,
 } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { useVendorData } from "@/context/VendorDataContext";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { toast } from "sonner";
 
@@ -252,28 +253,18 @@ function OrderDetailSheet({ order, onClose, onAction }: {
 
 export function Orders() {
   const { vendor } = useAuth();
-  const [orders,   setOrders]   = useState<VendorOrder[]>([]);
+  const { myOrders, newOrders } = useVendorData();
   const [tab,      setTab]      = useState<Tab>("All");
   const [selected, setSelected] = useState<VendorOrder | null>(null);
   const [query,    setQuery]    = useState("");
 
-  useEffect(() => {
-    if (!vendor) return;
-    return subscribeVendorOrders(vendor.id, (o) => {
-      setOrders(o);
-      setSelected((prev) => prev ? (o.find((x) => x.id === prev.id) ?? null) : null);
-    });
-  }, [vendor?.id]);
-
-  // Orders accepted by (or assigned to) this vendor
-  const myOrders = useMemo(() =>
-    orders.filter((o) => o.vendorId === vendor?.id),
-    [orders, vendor?.id]);
-
-  // Unassigned pending orders available to accept
-  const newOrders = useMemo(() =>
-    orders.filter((o) => !o.vendorId && o.status === "pending"),
-    [orders]);
+  // Keep selected order in sync when realtime updates arrive
+  useMemo(() => {
+    if (!selected) return;
+    const all = [...myOrders, ...newOrders];
+    const fresh = all.find((o) => o.id === selected.id);
+    if (fresh && fresh.status !== selected.status) setSelected(fresh);
+  }, [myOrders, newOrders]);
 
   const handleAction = async (action: "accept" | "reject" | "advance", id: string) => {
     try {
