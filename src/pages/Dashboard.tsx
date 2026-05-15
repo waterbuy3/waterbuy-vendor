@@ -81,7 +81,7 @@ function WeekChart({ orders }: { orders: VendorOrder[] }) {
 }
 
 export function Dashboard() {
-  const { vendor, refreshVendor } = useAuth();
+  const { vendor } = useAuth();
   const { myOrders, newOrders, totalRevenue, totalDelivered, totalLitres, pendingPayout } = useVendorData();
   const navigate = useNavigate();
   const [toggling, setToggling] = useState(false);
@@ -114,8 +114,9 @@ export function Dashboard() {
     if (!vendor || toggling) return;
     setToggling(true);
     try {
+      // The realtime subscription on the vendors table pushes the new value
+      // back automatically — no need for an extra round-trip fetch here.
       await updateVendorProfile(vendor.id, { isOpen: !vendor.isOpen });
-      await refreshVendor();
       toast.success(vendor.isOpen ? "Store closed" : "You're now open for orders!");
     } catch { toast.error("Failed to update status"); }
     finally { setToggling(false); }

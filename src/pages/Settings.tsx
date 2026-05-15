@@ -55,7 +55,7 @@ function SectionEditor({ title, onClose, children, onSave, saving }: {
 }
 
 export function Settings() {
-  const { vendor, user, refreshVendor } = useAuth();
+  const { vendor, user } = useAuth();
   const navigate = useNavigate();
   const [openSection, setOpenSection] = useState<Section>(null);
   const [saving, setSaving] = useState(false);
@@ -113,8 +113,8 @@ export function Settings() {
     if (!vendor || toggling) return;
     setToggling(true);
     try {
+      // Realtime subscription will push the updated row — skip extra fetch.
       await updateVendorProfile(vendor.id, { isOpen: !vendor.isOpen });
-      await refreshVendor();
       toast.success(vendor.isOpen ? "Store closed" : "Store is now open!");
     } catch { toast.error("Failed to update status"); }
     finally { setToggling(false); }

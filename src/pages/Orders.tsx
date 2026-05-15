@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   ShoppingBag, CheckCircle2, XCircle, Truck, MapPin, Phone,
   CreditCard, Package, Droplets, X, Search, ChevronRight,
@@ -258,26 +258,33 @@ export function Orders() {
   const [selected, setSelected] = useState<VendorOrder | null>(null);
   const [query,    setQuery]    = useState("");
 
-  // Keep selected order in sync when realtime updates arrive
-  useMemo(() => {
+  // Keep selected order in sync when realtime updates arrive.
+  // Was previously a useMemo abused for side effects (setSelected during
+  // render) — move to an effect so React state writes happen after commit.
+  useEffect(() => {
     if (!selected) return;
-    const all = [...myOrders, ...newOrders];
-    const fresh = all.find((o) => o.id === selected.id);
+    const fresh =
+      myOrders.find((o) => o.id === selected.id) ??
+      newOrders.find((o) => o.id === selected.id);
     if (fresh && fresh.status !== selected.status) setSelected(fresh);
-  }, [myOrders, newOrders]);
+  }, [myOrders, newOrders, selected]);
 
-  const handleAction = async (action: "accept" | "reject" | "advance", id: string) => {
+  // Stable handler — passed into OrderDetailSheet, so we don't want it to
+  // change identity on every render.
+  const handleAction = useCallback(async (action: "accept" | "reject" | "advance", id: string) => {
     try {
       if (action === "accept") await acceptOrder(id, vendor!.id);
       else if (action === "reject") await rejectOrder(id);
       else {
-        const order = orders.find((o) => o.id === id);
+        const order =
+          myOrders.find((o) => o.id === id) ??
+          newOrders.find((o) => o.id === id);
         if (order && NEXT_STATUS[order.status]) await updateOrderStatus(id, NEXT_STATUS[order.status]);
       }
       const label = action === "accept" ? "Order accepted" : action === "reject" ? "Order rejected" : "Status updated";
       toast.success(label);
     } catch { toast.error("Action failed"); }
-  };
+  }, [vendor, myOrders, newOrders]);
 
   const tabCounts = useMemo(() => ({
     All:       myOrders.length,

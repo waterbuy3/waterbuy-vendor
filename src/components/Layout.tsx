@@ -1,23 +1,16 @@
-import { useEffect, useState } from "react";
-import { useAuth } from "@/context/AuthContext";
-import { subscribeVendorOrders } from "@/lib/supabase";
+import { useVendorData } from "@/context/VendorDataContext";
 import { BottomNav } from "./BottomNav";
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { vendor } = useAuth();
-  const [newCount, setNewCount] = useState(0);
-
-  useEffect(() => {
-    if (!vendor) return;
-    return subscribeVendorOrders(vendor.id, (orders) => {
-      setNewCount(orders.filter((o) => o.status === "pending").length);
-    });
-  }, [vendor?.id]);
+  // Reuse the shared VendorDataContext — no extra Supabase subscription.
+  // `newOrders` is the unassigned-pending pool the vendor can claim, which
+  // is exactly the badge count Layout needs.
+  const { newOrders } = useVendorData();
 
   return (
     <>
       <div className="min-h-screen pb-nav scroll-ios">{children}</div>
-      <BottomNav newOrdersCount={newCount} />
+      <BottomNav newOrdersCount={newOrders.length} />
     </>
   );
 }

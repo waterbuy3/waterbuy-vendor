@@ -11,17 +11,30 @@ export const isConfigured =
 // Strip non-ISO-8859-1 characters from header values before the browser Fetch
 // API rejects them. Some versions of @supabase/supabase-js include Unicode in
 // X-Client-Info or similar headers which Chrome refuses.
+// Fast path: most requests have ASCII-only headers; only allocate a cleaned
+// copy when we actually detect an offending character.
+// eslint-disable-next-line no-control-regex
+const NON_LATIN1 = /[^\x00-\xFF]/;
 function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (init?.headers) {
-    const normalized = new Headers(init.headers as HeadersInit);
-    const clean: Record<string, string> = {};
-    normalized.forEach((v, k) => {
-      // eslint-disable-next-line no-control-regex
-      clean[k] = v.replace(/[^\x00-\xFF]/g, "");
-    });
-    return fetch(input, { ...init, headers: clean });
+  if (!init?.headers) return fetch(input, init);
+  // Quick scan of the raw headers before paying for a Headers() construction.
+  const raw = init.headers as HeadersInit;
+  let needsClean = false;
+  if (Array.isArray(raw)) {
+    for (const [, v] of raw) { if (NON_LATIN1.test(v)) { needsClean = true; break; } }
+  } else if (raw instanceof Headers) {
+    raw.forEach((v) => { if (NON_LATIN1.test(v)) needsClean = true; });
+  } else {
+    for (const v of Object.values(raw as Record<string, string>)) {
+      if (NON_LATIN1.test(v)) { needsClean = true; break; }
+    }
   }
-  return fetch(input, init);
+  if (!needsClean) return fetch(input, init);
+
+  const normalized = new Headers(raw);
+  const clean: Record<string, string> = {};
+  normalized.forEach((v, k) => { clean[k] = v.replace(/[^\x00-\xFF]/g, ""); });
+  return fetch(input, { ...init, headers: clean });
 }
 
 export const supabase = isConfigured
@@ -143,16 +156,19 @@ export function subscribeVendorProfile(
 ): () => void {
   if (!supabase) { callback(null); return () => {}; }
 
-  const fetch = async () => {
+  // Initial load only — realtime UPDATE events carry the full new row,
+  // so we don't need a re-fetch round trip on every change.
+  (async () => {
     const { data } = await supabase!.from("vendors").select("*").eq("id", id).single();
     callback(data ? rowToVendor(data as Record<string, unknown>) : null);
-  };
-
-  fetch();
+  })();
 
   const channel = supabase
-    .channel(`vendor-${id}-${Math.random().toString(36).slice(2)}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "vendors", filter: `id=eq.${id}` }, fetch)
+    .channel(`vendor-${id}`)
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "vendors", filter: `id=eq.${id}` },
+      ({ new: row }) => callback(rowToVendor(row as Record<string, unknown>)))
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "vendors", filter: `id=eq.${id}` },
+      () => callback(null))
     .subscribe();
 
   return () => { supabase!.removeChannel(channel); };
@@ -205,21 +221,54 @@ export function subscribeMyOrders(
 ): () => void {
   if (!supabase) { callback([]); return () => {}; }
 
-  const fetch = async () => {
+  let current: VendorOrder[] = [];
+  const emit = () => callback(current);
+
+  // Initial fetch — afterwards we mutate the local cache from event payloads.
+  (async () => {
     const { data } = await supabase!
       .from("orders")
       .select(ORDER_COLS)
       .eq("vendor_id", vendorId)
       .order("placed_at", { ascending: false })
       .limit(200);
-    callback((data ?? []).map((r) => rowToOrder(r as Record<string, unknown>)));
-  };
-
-  fetch();
+    current = (data ?? []).map((r) => rowToOrder(r as Record<string, unknown>));
+    emit();
+  })();
 
   const channel = supabase
     .channel(`my-orders-${vendorId}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `vendor_id=eq.${vendorId}` }, fetch)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders", filter: `vendor_id=eq.${vendorId}` },
+      ({ new: row }) => {
+        const o = rowToOrder(row as Record<string, unknown>);
+        if (current.some((x) => x.id === o.id)) return;
+        current = [o, ...current].slice(0, 200);
+        emit();
+      })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `vendor_id=eq.${vendorId}` },
+      ({ new: row }) => {
+        const o = rowToOrder(row as Record<string, unknown>);
+        const idx = current.findIndex((x) => x.id === o.id);
+        if (idx >= 0) {
+          // Replace in place — preserve order so React keys stay stable.
+          current = current.map((x, i) => (i === idx ? o : x));
+        } else if (o.vendorId === vendorId) {
+          // Newly assigned to us — prepend.
+          current = [o, ...current].slice(0, 200);
+        } else {
+          return;
+        }
+        emit();
+      })
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "orders", filter: `vendor_id=eq.${vendorId}` },
+      ({ old: row }) => {
+        const id = (row as { id?: string }).id;
+        if (!id) return;
+        const next = current.filter((x) => x.id !== id);
+        if (next.length === current.length) return;
+        current = next;
+        emit();
+      })
     .subscribe();
 
   return () => { supabase!.removeChannel(channel); };
@@ -231,7 +280,10 @@ export function subscribeNewOrders(
 ): () => void {
   if (!supabase) { callback([]); return () => {}; }
 
-  const fetch = async () => {
+  let current: VendorOrder[] = [];
+  const emit = () => callback(current);
+
+  (async () => {
     const { data } = await supabase!
       .from("orders")
       .select(ORDER_COLS)
@@ -239,43 +291,49 @@ export function subscribeNewOrders(
       .eq("status", "pending")
       .order("placed_at", { ascending: false })
       .limit(30);
-    callback((data ?? []).map((r) => rowToOrder(r as Record<string, unknown>)));
-  };
+    current = (data ?? []).map((r) => rowToOrder(r as Record<string, unknown>));
+    emit();
+  })();
 
-  fetch();
+  // We can't filter on `vendor_id IS NULL` server-side via the realtime
+  // postgres_changes filter, so we listen to all pending-status events and
+  // apply the unassigned check client-side.
+  const isUnassignedPending = (o: VendorOrder) => !o.vendorId && o.status === "pending";
 
-  // Listen for any pending-status change so we catch new placements and assignments
   const channel = supabase
     .channel("new-orders-pending")
-    .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: "status=eq.pending" }, fetch)
-    .subscribe();
-
-  return () => { supabase!.removeChannel(channel); };
-}
-
-/** @deprecated Use subscribeMyOrders + subscribeNewOrders via VendorDataContext instead. */
-export function subscribeVendorOrders(
-  vendorId: string,
-  callback: (orders: VendorOrder[]) => void
-): () => void {
-  if (!supabase) { callback([]); return () => {}; }
-
-  const fetch = async () => {
-    const { data } = await supabase!
-      .from("orders")
-      .select(ORDER_COLS)
-      .or(`vendor_id.eq.${vendorId},vendor_id.is.null`)
-      .order("placed_at", { ascending: false })
-      .limit(200);
-    callback((data ?? []).map((r) => rowToOrder(r as Record<string, unknown>)));
-  };
-
-  fetch();
-
-  const channelId = `vendor-orders-${vendorId}-${Math.random().toString(36).slice(2)}`;
-  const channel = supabase
-    .channel(channelId)
-    .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `vendor_id=eq.${vendorId}` }, fetch)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders", filter: "status=eq.pending" },
+      ({ new: row }) => {
+        const o = rowToOrder(row as Record<string, unknown>);
+        if (!isUnassignedPending(o) || current.some((x) => x.id === o.id)) return;
+        current = [o, ...current].slice(0, 30);
+        emit();
+      })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" },
+      ({ new: row }) => {
+        const o = rowToOrder(row as Record<string, unknown>);
+        const wasIn = current.some((x) => x.id === o.id);
+        const shouldBe = isUnassignedPending(o);
+        if (wasIn && !shouldBe) {
+          current = current.filter((x) => x.id !== o.id);
+          emit();
+        } else if (!wasIn && shouldBe) {
+          current = [o, ...current].slice(0, 30);
+          emit();
+        } else if (wasIn && shouldBe) {
+          current = current.map((x) => (x.id === o.id ? o : x));
+          emit();
+        }
+      })
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "orders" },
+      ({ old: row }) => {
+        const id = (row as { id?: string }).id;
+        if (!id) return;
+        const next = current.filter((x) => x.id !== id);
+        if (next.length === current.length) return;
+        current = next;
+        emit();
+      })
     .subscribe();
 
   return () => { supabase!.removeChannel(channel); };
@@ -323,19 +381,44 @@ export function subscribeVendorProducts(
 ): () => void {
   if (!supabase) { callback([]); return () => {}; }
 
-  const fetch = async () => {
+  let current: VendorProduct[] = [];
+  const emit = () => callback(current);
+
+  (async () => {
     const { data } = await supabase!
       .from("products")
       .select("*")
       .eq("vendor_id", vendorId);
-    callback((data ?? []).map((r) => rowToProduct(r as Record<string, unknown>)));
-  };
-
-  fetch();
+    current = (data ?? []).map((r) => rowToProduct(r as Record<string, unknown>));
+    emit();
+  })();
 
   const channel = supabase
-    .channel(`vendor-products-${vendorId}-${Math.random().toString(36).slice(2)}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "products", filter: `vendor_id=eq.${vendorId}` }, fetch)
+    .channel(`vendor-products-${vendorId}`)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "products", filter: `vendor_id=eq.${vendorId}` },
+      ({ new: row }) => {
+        const p = rowToProduct(row as Record<string, unknown>);
+        if (current.some((x) => x.id === p.id)) return;
+        current = [...current, p];
+        emit();
+      })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "products", filter: `vendor_id=eq.${vendorId}` },
+      ({ new: row }) => {
+        const p = rowToProduct(row as Record<string, unknown>);
+        const idx = current.findIndex((x) => x.id === p.id);
+        if (idx < 0) { current = [...current, p]; }
+        else { current = current.map((x, i) => (i === idx ? p : x)); }
+        emit();
+      })
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "products", filter: `vendor_id=eq.${vendorId}` },
+      ({ old: row }) => {
+        const id = (row as { id?: string }).id;
+        if (!id) return;
+        const next = current.filter((x) => x.id !== id);
+        if (next.length === current.length) return;
+        current = next;
+        emit();
+      })
     .subscribe();
 
   return () => { supabase!.removeChannel(channel); };
@@ -371,34 +454,63 @@ export async function toggleProductActive(productId: string, active: boolean): P
 
 // ─── Earnings / Payouts ───────────────────────────────────────────────────────
 
+function rowToPayout(r: Record<string, unknown>): Payout {
+  return {
+    id:        r.id as string,
+    vendorId:  r.vendor_id as string,
+    amount:    r.amount as number,
+    period:    r.period as string,
+    status:    r.status as "pending" | "paid",
+    paidAt:    r.paid_at as string | undefined,
+    createdAt: r.created_at as string,
+  };
+}
+
 export function subscribeVendorPayouts(
   vendorId: string,
   callback: (payouts: Payout[]) => void
 ): () => void {
   if (!supabase) { callback([]); return () => {}; }
 
-  const fetch = async () => {
+  let current: Payout[] = [];
+  const emit = () => callback(current);
+
+  (async () => {
     const { data } = await supabase!
       .from("payouts")
       .select("*")
       .eq("vendor_id", vendorId)
       .order("created_at", { ascending: false });
-    callback((data ?? []).map((r) => ({
-      id:        r.id as string,
-      vendorId:  r.vendor_id as string,
-      amount:    r.amount as number,
-      period:    r.period as string,
-      status:    r.status as "pending" | "paid",
-      paidAt:    r.paid_at as string | undefined,
-      createdAt: r.created_at as string,
-    })));
-  };
-
-  fetch();
+    current = (data ?? []).map((r) => rowToPayout(r as Record<string, unknown>));
+    emit();
+  })();
 
   const channel = supabase
-    .channel(`vendor-payouts-${vendorId}-${Math.random().toString(36).slice(2)}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "payouts", filter: `vendor_id=eq.${vendorId}` }, fetch)
+    .channel(`vendor-payouts-${vendorId}`)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "payouts", filter: `vendor_id=eq.${vendorId}` },
+      ({ new: row }) => {
+        const p = rowToPayout(row as Record<string, unknown>);
+        if (current.some((x) => x.id === p.id)) return;
+        current = [p, ...current];
+        emit();
+      })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "payouts", filter: `vendor_id=eq.${vendorId}` },
+      ({ new: row }) => {
+        const p = rowToPayout(row as Record<string, unknown>);
+        const idx = current.findIndex((x) => x.id === p.id);
+        if (idx < 0) { current = [p, ...current]; }
+        else { current = current.map((x, i) => (i === idx ? p : x)); }
+        emit();
+      })
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "payouts", filter: `vendor_id=eq.${vendorId}` },
+      ({ old: row }) => {
+        const id = (row as { id?: string }).id;
+        if (!id) return;
+        const next = current.filter((x) => x.id !== id);
+        if (next.length === current.length) return;
+        current = next;
+        emit();
+      })
     .subscribe();
 
   return () => { supabase!.removeChannel(channel); };

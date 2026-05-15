@@ -74,11 +74,17 @@ export function VendorDataProvider({ children }: { children: ReactNode }) {
     };
   }, [myOrders, payouts, vendor?.commissionPct]);
 
+  // Memoize the context value so consumers don't re-render unless the
+  // underlying data actually changed (otherwise every parent render of
+  // VendorDataProvider would re-render every consumer of useVendorData).
+  const value = useMemo(() => ({
+    myOrders, newOrders, payouts, loading,
+    totalRevenue, totalDelivered, totalLitres, pendingPayout,
+  }), [myOrders, newOrders, payouts, loading,
+       totalRevenue, totalDelivered, totalLitres, pendingPayout]);
+
   return (
-    <VendorDataContext.Provider value={{
-      myOrders, newOrders, payouts, loading,
-      totalRevenue, totalDelivered, totalLitres, pendingPayout,
-    }}>
+    <VendorDataContext.Provider value={value}>
       {children}
     </VendorDataContext.Provider>
   );

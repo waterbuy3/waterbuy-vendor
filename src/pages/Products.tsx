@@ -215,7 +215,7 @@ export function Products() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!vendor) return;
+    if (!vendor?.id) return;
     return subscribeVendorProducts(vendor.id, setProducts);
   }, [vendor?.id]);
 

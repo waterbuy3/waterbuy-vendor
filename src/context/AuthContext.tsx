@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
 import { subscribeToAuth, subscribeVendorProfile, fetchVendorById, isConfigured, type Vendor } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -28,6 +28,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const timeout = setTimeout(() => setLoading(false), 8000);
 
     const unsubAuth = subscribeToAuth((u) => {
+      // Skip when the auth event re-fires for the same user — avoids tearing
+      // down and re-establishing the vendor subscription on every token
+      // refresh, which otherwise cascades through VendorDataContext.
+      const prevId = userRef.current?.id ?? null;
+      const nextId = u?.id ?? null;
+      if (prevId === nextId) {
+        userRef.current = u;
+        return;
+      }
       userRef.current = u;
       unsubVendorRef.current?.();
       unsubVendorRef.current = null;
@@ -59,11 +68,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (v) setVendor(v);
   }, []);
 
-  return (
-    <AuthContext.Provider value={{ user, vendor, loading, refreshVendor }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, vendor, loading, refreshVendor }),
+    [user, vendor, loading, refreshVendor]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);
