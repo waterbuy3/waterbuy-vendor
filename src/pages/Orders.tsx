@@ -743,7 +743,7 @@ export function Orders() {
   return (
     <div className="animate-fade-in">
       {/* Header */}
-      <div className="bg-white pt-safe px-4 pt-4 pb-3 border-b border-slate-100 sticky top-0 z-10">
+      <div className="bg-white pt-safe-header px-4 pb-3 border-b border-slate-100 sticky top-0 z-10">
         <h1 className="text-xl font-extrabold text-slate-900 mb-3">Orders</h1>
 
         {tab !== "Recurring" && (

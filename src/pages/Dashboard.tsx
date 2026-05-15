@@ -237,7 +237,7 @@ export function Dashboard() {
   return (
     <div className="animate-fade-in">
       {/* ── Rich Header ── */}
-      <div className="relative bg-gradient-to-br from-[#0f0c29] via-[#1a1260] to-[#2d1fa3] pt-safe px-4 pt-4 pb-8 overflow-hidden">
+      <div className="relative bg-gradient-to-br from-[#0f0c29] via-[#1a1260] to-[#2d1fa3] pt-safe-header px-4 pb-8 overflow-hidden">
         {/* Decorative circles */}
         <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-violet-500/15 blur-2xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-24 h-24 rounded-full bg-indigo-400/10 blur-xl pointer-events-none" />

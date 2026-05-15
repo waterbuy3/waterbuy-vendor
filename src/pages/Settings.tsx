@@ -182,7 +182,7 @@ export function Settings() {
   return (
     <div className="animate-fade-in">
       {/* Header */}
-      <div className="bg-white pt-safe px-4 pt-4 pb-3 border-b border-slate-100">
+      <div className="bg-white pt-safe-header px-4 pb-3 border-b border-slate-100">
         <h1 className="text-xl font-extrabold text-slate-900">Settings</h1>
       </div>
 

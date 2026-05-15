@@ -35,6 +35,10 @@
 .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
 .mb-safe { margin-bottom: env(safe-area-inset-bottom, 0px); }
 
+/* Page-header top padding: 1rem of breathing room PLUS the status-bar inset.
+   Use this instead of `pt-safe pt-4` — those both set padding-top and collide. */
+.pt-safe-header { padding-top: calc(1rem + env(safe-area-inset-top, 0px)); }
+
 /* Bottom nav height + safe area */
 .pb-nav { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
 
