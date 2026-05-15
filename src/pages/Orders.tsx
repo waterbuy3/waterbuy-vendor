@@ -2,18 +2,18 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   ShoppingBag, CheckCircle2, XCircle, Truck, MapPin, Phone,
   CreditCard, Package, Droplets, X, Search, ChevronRight,
-  MessageCircle, Clock,
+  MessageCircle, Clock, CalendarDays, RefreshCw,
 } from "lucide-react";
 import {
   acceptOrder, rejectOrder, updateOrderStatus,
-  type VendorOrder,
+  type VendorOrder, type VendorSchedule,
 } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useVendorData } from "@/context/VendorDataContext";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { toast } from "sonner";
 
-const TABS = ["All", "New", "Active", "Delivered", "Cancelled"] as const;
+const TABS = ["All", "New", "Active", "Delivered", "Cancelled", "Scheduled"] as const;
 type Tab = (typeof TABS)[number];
 
 const STATUS_META: Record<string, { label: string; bg: string; text: string }> = {
@@ -254,9 +254,64 @@ function OrderDetailSheet({ order, onClose, onAction }: {
   );
 }
 
+function ScheduledCard({ s }: { s: VendorSchedule }) {
+  const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}`;
+  const waLink = s.phone
+    ? `https://wa.me/${s.phone.replace(/\D/g, "").replace(/^(?!91)/, "91").slice(-12)}?text=${encodeURIComponent(`Hi ${s.customer}, your AquaPure scheduled delivery is confirmed.`)}`
+    : null;
+  return (
+    <div className="w-full bg-white rounded-2xl border border-teal-100 shadow-sm p-4 space-y-3">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-2 mb-0.5">
+            <CalendarDays className="h-4 w-4 text-teal-600" />
+            <p className="text-sm font-extrabold text-slate-900">{s.customer}</p>
+          </div>
+          <p className="text-xs text-slate-500">{s.productName} × {s.quantity}</p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-sm font-extrabold text-slate-900">₹{s.total}</p>
+          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+            s.status === "active" ? "bg-teal-100 text-teal-700" : "bg-amber-100 text-amber-700"
+          }`}>
+            {s.status === "active" ? "Active" : "Paused"}
+          </span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-slate-500">
+        <RefreshCw className="h-3.5 w-3.5 text-slate-400" />
+        <span>{s.frequency}</span>
+        {s.timeSlot && <><span>·</span><span>{s.timeSlot}</span></>}
+      </div>
+      <div className="flex items-start gap-2 text-xs text-slate-500">
+        <MapPin className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
+        <span className="truncate">{s.address}</span>
+      </div>
+      <div className="flex gap-2 pt-1">
+        <a href={mapsLink} target="_blank" rel="noreferrer"
+          className="flex-1 py-2 bg-indigo-50 text-indigo-700 text-xs font-extrabold rounded-xl border border-indigo-100 flex items-center justify-center gap-1.5">
+          <MapPin className="h-3.5 w-3.5" /> Maps
+        </a>
+        {s.phone && (
+          <a href={`tel:${s.phone}`}
+            className="flex-1 py-2 bg-blue-50 text-blue-700 text-xs font-extrabold rounded-xl border border-blue-100 flex items-center justify-center gap-1.5">
+            <Phone className="h-3.5 w-3.5" /> Call
+          </a>
+        )}
+        {waLink && (
+          <a href={waLink} target="_blank" rel="noreferrer"
+            className="flex-1 py-2 bg-emerald-50 text-emerald-700 text-xs font-extrabold rounded-xl border border-emerald-100 flex items-center justify-center gap-1.5">
+            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Orders() {
   const { vendor } = useAuth();
-  const { myOrders, newOrders } = useVendorData();
+  const { myOrders, newOrders, schedules } = useVendorData();
   const [tab,      setTab]      = useState<Tab>("All");
   const [selected, setSelected] = useState<VendorOrder | null>(null);
   const [query,    setQuery]    = useState("");
@@ -299,7 +354,8 @@ export function Orders() {
     Active:    myOrders.filter((o) => ["confirmed","in_transit"].includes(o.status)).length,
     Delivered: myOrders.filter((o) => o.status === "delivered").length,
     Cancelled: myOrders.filter((o) => o.status === "cancelled" || o.status === "rejected").length,
-  }), [myOrders, newOrders]);
+    Scheduled: schedules.length,
+  }), [myOrders, newOrders, schedules]);
 
   const visible = useMemo(() => {
     // "New" tab shows claimable unassigned orders; all other tabs show this vendor's orders
@@ -353,7 +409,23 @@ export function Orders() {
         </div>
       </div>
 
+      {/* Scheduled tab — separate list */}
+      {tab === "Scheduled" && (
+        <div className="px-4 py-3 space-y-2">
+          {schedules.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-100 py-16 text-center mt-4">
+              <CalendarDays className="h-8 w-8 text-slate-200 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-slate-400">No active scheduled deliveries</p>
+            </div>
+          ) : (
+            schedules.map((s) => <ScheduledCard key={s.id} s={s} />)
+          )}
+          <div className="h-2" />
+        </div>
+      )}
+
       {/* Order list */}
+      {tab !== "Scheduled" && (
       <div className="px-4 py-3 space-y-2">
         {visible.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-100 py-16 text-center mt-4">
@@ -444,6 +516,7 @@ export function Orders() {
         )}
         <div className="h-2" />
       </div>
+      )}
 
       {/* Detail sheet */}
       {selected && (

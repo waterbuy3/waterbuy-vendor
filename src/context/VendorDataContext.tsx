@@ -4,8 +4,10 @@ import {
 import {
   subscribeMyOrders,
   subscribeNewOrders,
+  subscribeAllSchedules,
   subscribeVendorPayouts,
   type VendorOrder,
+  type VendorSchedule,
   type Payout,
 } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
@@ -13,6 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 interface VendorDataContextValue {
   myOrders:  VendorOrder[];
   newOrders: VendorOrder[];
+  schedules: VendorSchedule[];
   payouts:   Payout[];
   loading:   boolean;
   // Pre-computed summary (avoids redundant getEarningSummary() calls)
@@ -23,7 +26,7 @@ interface VendorDataContextValue {
 }
 
 const VendorDataContext = createContext<VendorDataContextValue>({
-  myOrders: [], newOrders: [], payouts: [], loading: true,
+  myOrders: [], newOrders: [], schedules: [], payouts: [], loading: true,
   totalRevenue: 0, totalDelivered: 0, totalLitres: 0, pendingPayout: 0,
 });
 
@@ -31,6 +34,7 @@ export function VendorDataProvider({ children }: { children: ReactNode }) {
   const { vendor } = useAuth();
   const [myOrders,  setMyOrders]  = useState<VendorOrder[]>([]);
   const [newOrders, setNewOrders] = useState<VendorOrder[]>([]);
+  const [schedules, setSchedules] = useState<VendorSchedule[]>([]);
   const [payouts,   setPayouts]   = useState<Payout[]>([]);
   const [loading,   setLoading]   = useState(true);
 
@@ -62,9 +66,10 @@ export function VendorDataProvider({ children }: { children: ReactNode }) {
       maybeFinish();
     });
 
+    const unsubSchedules = subscribeAllSchedules(setSchedules);
     const unsubPay = subscribeVendorPayouts(vendor.id, setPayouts);
 
-    return () => { unsubMy(); unsubNew(); unsubPay(); };
+    return () => { unsubMy(); unsubNew(); unsubSchedules(); unsubPay(); };
   }, [vendor?.id]);
 
   const { totalRevenue, totalDelivered, totalLitres, pendingPayout } = useMemo(() => {
@@ -86,9 +91,9 @@ export function VendorDataProvider({ children }: { children: ReactNode }) {
   // underlying data actually changed (otherwise every parent render of
   // VendorDataProvider would re-render every consumer of useVendorData).
   const value = useMemo(() => ({
-    myOrders, newOrders, payouts, loading,
+    myOrders, newOrders, schedules, payouts, loading,
     totalRevenue, totalDelivered, totalLitres, pendingPayout,
-  }), [myOrders, newOrders, payouts, loading,
+  }), [myOrders, newOrders, schedules, payouts, loading,
        totalRevenue, totalDelivered, totalLitres, pendingPayout]);
 
   return (

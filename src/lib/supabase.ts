@@ -442,6 +442,78 @@ export async function toggleProductActive(productId: string, active: boolean): P
   await supabase.from("products").update({ active }).eq("id", productId);
 }
 
+// ─── Schedules (recurring deliveries) ────────────────────────────────────────
+
+export interface VendorSchedule {
+  id: string;
+  userId: string;
+  customer: string;
+  phone: string;
+  productName: string;
+  quantity: number;
+  frequency: string;
+  startDate: string;
+  timeSlot: string;
+  address: string;
+  total: number;
+  status: "active" | "paused" | "cancelled";
+  createdAt: string;
+}
+
+function rowToSchedule(row: Record<string, unknown>): VendorSchedule {
+  return {
+    id:          row.id as string,
+    userId:      (row.user_id as string) ?? "",
+    customer:    (row.customer as string) ?? "",
+    phone:       (row.phone as string) ?? "",
+    productName: (row.product_name as string) ?? "",
+    quantity:    (row.quantity as number) ?? 1,
+    frequency:   (row.frequency as string) ?? "",
+    startDate:   (row.start_date as string) ?? "",
+    timeSlot:    (row.time_slot as string) ?? "",
+    address:     (row.address as string) ?? "",
+    total:       (row.total as number) ?? 0,
+    status:      ((row.status as string) ?? "active") as VendorSchedule["status"],
+    createdAt:   (row.created_at as string) ?? "",
+  };
+}
+
+/** All active scheduled deliveries — vendors see these to plan recurring fulfilment. */
+export function subscribeAllSchedules(
+  callback: (schedules: VendorSchedule[]) => void
+): () => void {
+  if (!supabase) { callback([]); return () => {}; }
+
+  let current: VendorSchedule[] = [];
+  const emit = () => callback(current);
+
+  (async () => {
+    const { data } = await supabase!
+      .from("schedules")
+      .select("*")
+      .in("status", ["active", "paused"])
+      .order("created_at", { ascending: false });
+    current = (data ?? []).map((r) => rowToSchedule(r as Record<string, unknown>));
+    emit();
+  })();
+
+  const channel = supabase
+    .channel("vendor-all-schedules")
+    .on("postgres_changes", { event: "*", schema: "public", table: "schedules" },
+      async () => {
+        const { data } = await supabase!
+          .from("schedules")
+          .select("*")
+          .in("status", ["active", "paused"])
+          .order("created_at", { ascending: false });
+        current = (data ?? []).map((r) => rowToSchedule(r as Record<string, unknown>));
+        emit();
+      })
+    .subscribe();
+
+  return () => { supabase!.removeChannel(channel); };
+}
+
 // ─── Earnings / Payouts ───────────────────────────────────────────────────────
 
 function rowToPayout(r: Record<string, unknown>): Payout {
