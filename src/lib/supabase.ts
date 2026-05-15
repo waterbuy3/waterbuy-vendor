@@ -37,14 +37,21 @@ function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respon
   return fetch(input, { ...init, headers: clean });
 }
 
+// Standalone PWA gets its own storage key → separate BroadcastChannel from
+// the browser tab, so signing out in Chrome doesn't evict the PWA session.
+const isPwa = typeof window !== "undefined" &&
+  (window.matchMedia("(display-mode: standalone)").matches ||
+   (navigator as { standalone?: boolean }).standalone === true);
+
 export const supabase = isConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
       global: { fetch: safeFetch },
       auth: {
-        flowType: "implicit",       // localStorage-only — works in PWA standalone
+        flowType: "implicit",
         persistSession: true,
         detectSessionInUrl: true,
         autoRefreshToken: true,
+        storageKey: isPwa ? "aqp-vendor-pwa" : "aqp-vendor-browser",
       },
     })
   : null;
