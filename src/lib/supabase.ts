@@ -352,6 +352,20 @@ export function parseSubscriptionFrequency(items: string): string {
   return parts.length > 1 ? parts[parts.length - 1].trim() : "Monthly";
 }
 
+/**
+ * Parse a litre volume out of a product/size string — mirrors the customer
+ * app's checkout logic so litres are tracked consistently across both apps.
+ * "20L Can" → 20, "500 ml" → 0.5, "Family Pack" → 0.
+ */
+export function parseLitres(text: string): number {
+  const s = (text ?? "").toLowerCase();
+  const ml = s.match(/(\d+(?:\.\d+)?)\s*ml/);
+  if (ml) return parseFloat(ml[1]) / 1000;
+  const l = s.match(/(\d+(?:\.\d+)?)\s*l/);
+  if (l) return parseFloat(l[1]);
+  return 0;
+}
+
 /** Compute next due date: start + (deliveryCount * interval). */
 export function computeNextDueDate(
   frequency: string,
@@ -530,7 +544,7 @@ export async function markScheduleDelivered(
     total:       schedule.total,
     payment:     "cod",
     address:     schedule.address,
-    litres:      0,
+    litres:      +(parseLitres(schedule.productName) * schedule.quantity).toFixed(2),
     status:      "delivered",
     order_type:  "schedule",
     schedule_id: schedule.id,
@@ -554,7 +568,8 @@ export async function markSubscriptionDelivered(
     total:       0,
     payment:     "cod",
     address:     subscription.address,
-    litres:      0,
+    // Best-effort litres from the plan label (e.g. "20L Family Plan").
+    litres:      parseLitres(subscription.items),
     status:      "delivered",
     order_type:  "subscription",
     schedule_id: subscription.id,

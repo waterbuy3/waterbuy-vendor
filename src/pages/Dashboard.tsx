@@ -87,22 +87,23 @@ function WeekChart({ orders }: { orders: VendorOrder[] }) {
   );
 }
 
-/** Animated stat tile with count-up value. */
+/** Animated stat tile with count-up value — greys out at zero. */
 function StatTile({ label, value, prefix = "", suffix = "", icon: Icon, bg, ic, border, onClick }: {
   label: string; value: number; prefix?: string; suffix?: string;
   icon: typeof ShoppingBag; bg: string; ic: string; border: string; onClick: () => void;
 }) {
   const animated = useCountUp(value);
+  const isZero = value === 0;
   return (
     <button
       onClick={() => { tap(); onClick(); }}
-      className={`bg-white rounded-2xl shadow-md border ${border} p-3 text-left active:scale-95 transition-transform`}
+      className={`bg-white rounded-2xl shadow-md border ${border} p-3 text-left active:scale-95 transition-transform ${isZero ? "opacity-75" : ""}`}
     >
-      <div className={`w-8 h-8 rounded-xl ${bg} flex items-center justify-center mb-2`}>
-        <Icon className={`h-4 w-4 ${ic}`} strokeWidth={1.8} />
+      <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-2 ${isZero ? "bg-slate-100" : bg}`}>
+        <Icon className={`h-4 w-4 ${isZero ? "text-slate-300" : ic}`} strokeWidth={1.8} />
       </div>
       <p className="text-[10px] text-slate-400 font-medium leading-tight">{label}</p>
-      <p className="text-[17px] font-extrabold text-slate-900 leading-tight mt-0.5">
+      <p className={`text-[17px] font-extrabold leading-tight mt-0.5 ${isZero ? "text-slate-300" : "text-slate-900"}`}>
         {prefix}{Math.round(animated).toLocaleString("en-IN")}{suffix}
       </p>
     </button>
@@ -237,7 +238,7 @@ export function Dashboard() {
   return (
     <div className="animate-fade-in">
       {/* ── Rich Header ── */}
-      <div className="relative bg-gradient-to-br from-[#0f0c29] via-[#1a1260] to-[#2d1fa3] pt-safe-header px-4 pb-8 overflow-hidden">
+      <div className="relative bg-gradient-to-br from-[#0f0c29] via-[#1a1260] to-[#2d1fa3] pt-safe-header px-4 pb-12 overflow-hidden">
         {/* Decorative circles */}
         <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-violet-500/15 blur-2xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-24 h-24 rounded-full bg-indigo-400/10 blur-xl pointer-events-none" />
@@ -375,7 +376,7 @@ export function Dashboard() {
                 <div key={order.id}
                   className="bg-white rounded-2xl border border-violet-100 shadow-sm p-3.5 shrink-0 w-[200px]">
                   <div className="flex items-center justify-between mb-1.5">
-                    <p className="text-xs font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</p>
+                    <p className="text-xs font-extrabold text-slate-900">#{order.id.slice(0, 8).toUpperCase()}</p>
                     <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${STATUS_COLOR[order.status]}`}>
                       {STATUS_LABEL[order.status]}
                     </span>
@@ -550,7 +551,7 @@ export function Dashboard() {
                       onClick={() => navigate("/orders")}
                     >
                       <div className="flex-1 min-w-0 mr-3">
-                        <p className="text-sm font-extrabold text-slate-900 mb-0.5">#{order.id.slice(-6).toUpperCase()}</p>
+                        <p className="text-sm font-extrabold text-slate-900 mb-0.5">#{order.id.slice(0, 8).toUpperCase()}</p>
                         <p className="text-xs text-slate-500 truncate">{order.customer} · {order.items}</p>
                       </div>
                       <div className="text-right shrink-0">

@@ -107,7 +107,7 @@ function OrderDetailSheet({ order, onClose, onAction }: {
   };
 
   const phone = order.phone?.replace(/\D/g, "") ?? "";
-  const waLink = `https://wa.me/${phone.startsWith("91") ? phone : "91" + phone.slice(-10)}?text=${encodeURIComponent(`Hi ${order.customer}, your AquaPure order #${order.id.slice(-6).toUpperCase()} has been ${order.status === "pending" ? "confirmed" : order.status}.`)}`;
+  const waLink = `https://wa.me/${phone.startsWith("91") ? phone : "91" + phone.slice(-10)}?text=${encodeURIComponent(`Hi ${order.customer}, your AquaPure order #${order.id.slice(0, 8).toUpperCase()} has been ${order.status === "pending" ? "confirmed" : order.status}.`)}`;
   const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.address)}`;
 
   return (
@@ -120,7 +120,7 @@ function OrderDetailSheet({ order, onClose, onAction }: {
 
         <div className="flex items-center justify-between px-5 pb-3 shrink-0">
           <div>
-            <p className="text-base font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</p>
+            <p className="text-base font-extrabold text-slate-900">#{order.id.slice(0, 8).toUpperCase()}</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
               {order.placedAt ? format(parseISO(order.placedAt), "d MMM yyyy, h:mm a") : ""}
             </p>
@@ -601,7 +601,7 @@ function OrderCard({ order, acting, onSelect, onAction, index }: {
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0 mr-3">
           <div className="flex items-center gap-2 mb-0.5">
-            <p className="text-sm font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</p>
+            <p className="text-sm font-extrabold text-slate-900">#{order.id.slice(0, 8).toUpperCase()}</p>
             {isNew && (
               <span className="text-[9px] font-extrabold bg-amber-500 text-white px-1.5 py-0.5 rounded-full animate-pulse">NEW</span>
             )}
@@ -715,7 +715,7 @@ export function Orders() {
       const q = query.toLowerCase();
       base = base.filter((o) =>
         o.customer.toLowerCase().includes(q) ||
-        o.id.slice(-6).toLowerCase().includes(q) ||
+        o.id.slice(0, 8).toLowerCase().includes(q) ||
         o.items.toLowerCase().includes(q)
       );
     }
