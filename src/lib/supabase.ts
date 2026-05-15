@@ -867,3 +867,72 @@ export async function getEarningSummary(vendorId: string): Promise<{
     commissionPct,
   };
 }
+
+// ─── Support ──────────────────────────────────────────────────────────────────
+// Vendor support tickets share the `support_messages` table with customers.
+// The admin app distinguishes them by matching user_id against the vendors
+// table — no separate table or schema change needed.
+
+export interface SupportTicket {
+  id: string;
+  subject: string;
+  message: string;
+  status: "open" | "replied" | "closed";
+  adminReply: string | null;
+  createdAt: string;
+  repliedAt: string | null;
+}
+
+function rowToTicket(r: Record<string, unknown>): SupportTicket {
+  return {
+    id:         r.id as string,
+    subject:    (r.subject as string) ?? "",
+    message:    (r.message as string) ?? "",
+    status:     ((r.status as string) ?? "open") as SupportTicket["status"],
+    adminReply: (r.admin_reply as string) ?? null,
+    createdAt:  (r.created_at as string) ?? "",
+    repliedAt:  (r.replied_at as string) ?? null,
+  };
+}
+
+/** Send a support message to the platform admin. */
+export async function sendSupportMessage(msg: {
+  vendorId: string; vendorName: string; vendorEmail: string;
+  subject: string; message: string;
+}): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("support_messages").insert({
+    user_id:    msg.vendorId,
+    user_name:  msg.vendorName,
+    user_email: msg.vendorEmail,
+    subject:    msg.subject,
+    message:    msg.message,
+  });
+  return !error;
+}
+
+/** This vendor's support tickets — realtime, oldest first for chat display. */
+export function subscribeSupportMessages(
+  vendorId: string,
+  callback: (tickets: SupportTicket[]) => void,
+): () => void {
+  if (!supabase) { callback([]); return () => {}; }
+
+  const refetch = async () => {
+    const { data } = await supabase!
+      .from("support_messages")
+      .select("*")
+      .eq("user_id", vendorId)
+      .order("created_at", { ascending: true });
+    callback((data ?? []).map((r) => rowToTicket(r as Record<string, unknown>)));
+  };
+
+  refetch();
+  const ch = supabase
+    .channel(`vendor-support-${vendorId}`)
+    .on("postgres_changes",
+      { event: "*", schema: "public", table: "support_messages", filter: `user_id=eq.${vendorId}` },
+      refetch)
+    .subscribe();
+  return () => { supabase!.removeChannel(ch); };
+}

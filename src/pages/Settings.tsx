@@ -3,7 +3,7 @@ import {
   Building2, Phone, MapPin, Landmark, KeyRound, LogOut,
   ChevronRight, Droplets, Save, Loader2, Eye, EyeOff,
   ToggleLeft, ToggleRight, Percent, X, Mail,
-  HelpCircle, ChevronDown, ShieldCheck,
+  HelpCircle, ChevronDown, ShieldCheck, LifeBuoy,
 } from "lucide-react";
 import { updateVendorProfile, vendorSignOut, supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
@@ -346,6 +346,20 @@ export function Settings() {
             <div className="flex-1 text-left">
               <p className="text-sm font-extrabold text-slate-900">Change Password</p>
               <p className="text-xs text-slate-400 mt-0.5">Update your account password</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
+          </button>
+
+          <button
+            onClick={() => { tap(); navigate("/support"); }}
+            className="w-full flex items-center gap-3 px-4 py-4 border-b border-slate-50 active:bg-slate-50 transition-colors"
+          >
+            <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
+              <LifeBuoy className="h-5 w-5 text-teal-600" />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-extrabold text-slate-900">Contact Support</p>
+              <p className="text-xs text-slate-400 mt-0.5">Message the platform team for help</p>
             </div>
             <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
           </button>

@@ -11,6 +11,7 @@ import { Orders }    from "@/pages/Orders";
 import { Products }  from "@/pages/Products";
 import { Earnings }  from "@/pages/Earnings";
 import { Settings }  from "@/pages/Settings";
+import { Support }   from "@/pages/Support";
 import { vendorSignOut } from "@/lib/supabase";
 
 function Guard({ children }: { children: React.ReactNode }) {
@@ -86,6 +87,7 @@ export default function App() {
                   <Route path="/products" element={<Products />}  />
                   <Route path="/earnings" element={<Earnings />}  />
                   <Route path="/settings" element={<Settings />}  />
+                  <Route path="/support"  element={<Support />}   />
                   <Route path="*"         element={<Navigate to="/" replace />} />
                 </Routes>
               </Layout>
