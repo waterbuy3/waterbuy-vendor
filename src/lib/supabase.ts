@@ -1,7 +1,9 @@
 import { createClient, type User as SupabaseUser } from "@supabase/supabase-js";
 
-const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+// Trim trailing newlines — Vercel sometimes injects \n into env var values,
+// which appears as %0A in WebSocket URLs and breaks realtime connections.
+const supabaseUrl     = ((import.meta.env.VITE_SUPABASE_URL     as string) ?? "").trim();
+const supabaseAnonKey = ((import.meta.env.VITE_SUPABASE_ANON_KEY as string) ?? "").trim();
 
 export const isConfigured =
   typeof window !== "undefined" && !!supabaseUrl && supabaseUrl !== "REPLACE_ME";
@@ -144,7 +146,7 @@ export function subscribeVendorProfile(
   fetch();
 
   const channel = supabase
-    .channel(`vendor-${id}`)
+    .channel(`vendor-${id}-${Math.random().toString(36).slice(2)}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "vendors", filter: `id=eq.${id}` }, fetch)
     .subscribe();
 
@@ -206,8 +208,12 @@ export function subscribeVendorOrders(
 
   fetch();
 
+  // Use a unique channel name per subscription so multiple callers
+  // (e.g. Layout for badge count + Orders page) don't share one channel
+  // and trigger "cannot add callbacks after subscribe()".
+  const channelId = `vendor-orders-${vendorId}-${Math.random().toString(36).slice(2)}`;
   const channel = supabase
-    .channel(`vendor-orders-${vendorId}`)
+    .channel(channelId)
     .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `vendor_id=eq.${vendorId}` }, fetch)
     .subscribe();
 
@@ -267,7 +273,7 @@ export function subscribeVendorProducts(
   fetch();
 
   const channel = supabase
-    .channel(`vendor-products-${vendorId}`)
+    .channel(`vendor-products-${vendorId}-${Math.random().toString(36).slice(2)}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "products", filter: `vendor_id=eq.${vendorId}` }, fetch)
     .subscribe();
 
@@ -330,7 +336,7 @@ export function subscribeVendorPayouts(
   fetch();
 
   const channel = supabase
-    .channel(`vendor-payouts-${vendorId}`)
+    .channel(`vendor-payouts-${vendorId}-${Math.random().toString(36).slice(2)}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "payouts", filter: `vendor_id=eq.${vendorId}` }, fetch)
     .subscribe();
 
