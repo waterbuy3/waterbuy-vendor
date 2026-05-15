@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0d9488"/>
+      <stop offset="100%" stop-color="#045f58"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- Truck body (cargo) -->
+  <rect x="60" y="185" width="250" height="165" rx="12" fill="white" opacity="0.95"/>
+  <!-- Cab -->
+  <rect x="310" y="160" width="142" height="190" rx="12" fill="white" opacity="0.75"/>
+  <!-- Windshield -->
+  <rect x="328" y="178" width="96" height="82" rx="8" fill="rgba(0,80,80,0.35)"/>
+  <!-- Wheels -->
+  <circle cx="148" cy="372" r="42" fill="white" opacity="0.85"/>
+  <circle cx="148" cy="372" r="20" fill="rgba(13,148,136,0.8)"/>
+  <circle cx="380" cy="372" r="42" fill="white" opacity="0.85"/>
+  <circle cx="380" cy="372" r="20" fill="rgba(13,148,136,0.8)"/>
+  <!-- Axle line -->
+  <rect x="60" y="348" width="432" height="10" rx="5" fill="white" opacity="0.25"/>
+</svg>
