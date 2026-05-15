@@ -6,7 +6,7 @@ const supabaseUrl     = ((import.meta.env.VITE_SUPABASE_URL     as string) ?? ""
 const supabaseAnonKey = ((import.meta.env.VITE_SUPABASE_ANON_KEY as string) ?? "").trim();
 
 export const isConfigured =
-  typeof window !== "undefined" && !!supabaseUrl && supabaseUrl !== "REPLACE_ME";
+  !!supabaseUrl && supabaseUrl !== "REPLACE_ME";
 
 // Strip non-ISO-8859-1 characters from header values before the browser Fetch
 // API rejects them. Some versions of @supabase/supabase-js include Unicode in
