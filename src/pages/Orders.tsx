@@ -253,7 +253,7 @@ function OrderDetailSheet({ order, onClose, onAction }: {
 
 export function Orders() {
   const { vendor } = useAuth();
-  const { myOrders, newOrders, loading } = useVendorData();
+  const { myOrders, newOrders } = useVendorData();
   const [tab,      setTab]      = useState<Tab>("All");
   const [selected, setSelected] = useState<VendorOrder | null>(null);
   const [query,    setQuery]    = useState("");
