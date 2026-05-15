@@ -1,4 +1,4 @@
-﻿const CACHE = "aquapure-vendor-v1";
+const CACHE = "aquapure-vendor-v1";
 const PRECACHE = [
   "/",
   "/manifest.webmanifest",
