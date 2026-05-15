@@ -65,6 +65,17 @@
   to   { opacity: 1; transform: translateX(0); }
 }
 
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes pop-in {
+  0%   { transform: scale(0.85); opacity: 0; }
+  60%  { transform: scale(1.04); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 .animate-fade-in {
   animation: fade-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -79,6 +90,23 @@
 
 .animate-slide-right {
   animation: slide-in-right 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pop-in {
+  animation: pop-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Shimmering skeleton loader surface */
+.shimmer {
+  background: linear-gradient(100deg, #e9eef4 30%, #f4f7fa 50%, #e9eef4 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* Staggered list entrance — set animationDelay per child via inline style */
+.stagger > * {
+  opacity: 0;
+  animation: fade-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .live-dot {

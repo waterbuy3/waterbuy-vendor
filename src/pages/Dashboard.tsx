@@ -3,12 +3,17 @@ import { useNavigate } from "react-router-dom";
 import {
   ShoppingBag, Droplets, TrendingUp, Wallet, Zap, ChevronRight,
   Bell, ToggleLeft, ToggleRight, CheckCircle2, XCircle, Clock, Truck,
+  CalendarDays, RefreshCw, Star, Target, Gauge, Package,
 } from "lucide-react";
 import {
-  updateVendorProfile, acceptOrder, rejectOrder, updateOrderStatus, type VendorOrder,
+  updateVendorProfile, acceptOrder, rejectOrder, updateOrderStatus,
+  claimSchedule, claimSubscriptionOrder,
+  type VendorOrder, type VendorSchedule,
 } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useVendorData } from "@/context/VendorDataContext";
+import { useCountUp, tap, success, warn, inr } from "@/lib/ui";
+import { SkeletonList } from "@/components/Skeleton";
 import { format, isToday, subDays, parseISO } from "date-fns";
 import { toast } from "sonner";
 
@@ -18,6 +23,7 @@ const STATUS_COLOR: Record<string, string> = {
   in_transit: "bg-violet-100 text-violet-700",
   delivered:  "bg-emerald-100 text-emerald-700",
   cancelled:  "bg-red-100 text-red-500",
+  rejected:   "bg-rose-100 text-rose-600",
 };
 const STATUS_LABEL: Record<string, string> = {
   pending:    "New",
@@ -25,6 +31,7 @@ const STATUS_LABEL: Record<string, string> = {
   in_transit: "In Transit",
   delivered:  "Delivered",
   cancelled:  "Cancelled",
+  rejected:   "Rejected",
 };
 
 function WeekChart({ orders }: { orders: VendorOrder[] }) {
@@ -54,7 +61,7 @@ function WeekChart({ orders }: { orders: VendorOrder[] }) {
         {days.map((day) => {
           const barH = Math.max((day.amount / max) * H, day.amount > 0 ? 6 : 3);
           return (
-            <div key={day.date} className="flex-1 flex items-end justify-center">
+            <div key={day.date} className="flex-1 flex items-end justify-center group">
               <div
                 style={{ height: barH }}
                 className={`w-full rounded-t-md transition-all duration-500 ${
@@ -80,12 +87,63 @@ function WeekChart({ orders }: { orders: VendorOrder[] }) {
   );
 }
 
+/** Animated stat tile with count-up value. */
+function StatTile({ label, value, prefix = "", suffix = "", icon: Icon, bg, ic, border, onClick }: {
+  label: string; value: number; prefix?: string; suffix?: string;
+  icon: typeof ShoppingBag; bg: string; ic: string; border: string; onClick: () => void;
+}) {
+  const animated = useCountUp(value);
+  return (
+    <button
+      onClick={() => { tap(); onClick(); }}
+      className={`bg-white rounded-2xl shadow-md border ${border} p-3 text-left active:scale-95 transition-transform`}
+    >
+      <div className={`w-8 h-8 rounded-xl ${bg} flex items-center justify-center mb-2`}>
+        <Icon className={`h-4 w-4 ${ic}`} strokeWidth={1.8} />
+      </div>
+      <p className="text-[10px] text-slate-400 font-medium leading-tight">{label}</p>
+      <p className="text-[17px] font-extrabold text-slate-900 leading-tight mt-0.5">
+        {prefix}{Math.round(animated).toLocaleString("en-IN")}{suffix}
+      </p>
+    </button>
+  );
+}
+
 export function Dashboard() {
   const { vendor } = useAuth();
-  const { myOrders, newOrders, totalRevenue, totalDelivered, totalLitres, pendingPayout } = useVendorData();
+  const {
+    myOrders, newOrders,
+    unclaimedSchedules, unclaimedSubscriptions,
+    totalRevenue, totalDelivered, totalLitres, pendingPayout, loading,
+  } = useVendorData();
   const navigate = useNavigate();
-  const [toggling, setToggling] = useState(false);
-  const [acting, setActing] = useState<string | null>(null);
+  const [toggling,   setToggling]   = useState(false);
+  const [acting,     setActing]     = useState<string | null>(null);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+
+  const handleClaimSchedule = async (s: VendorSchedule) => {
+    if (!vendor || claimingId) return;
+    tap();
+    setClaimingId(s.id);
+    try {
+      await claimSchedule(s.id, vendor.id);
+      success();
+      toast.success("Schedule claimed");
+    } catch { toast.error("Failed to claim"); }
+    finally { setClaimingId(null); }
+  };
+
+  const handleClaimSubscription = async (sub: VendorOrder) => {
+    if (!vendor || claimingId) return;
+    tap();
+    setClaimingId(sub.id);
+    try {
+      await claimSubscriptionOrder(sub.id, vendor.id);
+      success();
+      toast.success("Subscription claimed");
+    } catch { toast.error("Failed to claim"); }
+    finally { setClaimingId(null); }
+  };
 
   const todayOrders = useMemo(() =>
     myOrders.filter((o) => { try { return isToday(parseISO(o.placedAt)); } catch { return false; } }),
@@ -98,6 +156,23 @@ export function Dashboard() {
   const todayLitres = useMemo(() =>
     todayOrders.filter((o) => o.status === "delivered").reduce((s, o) => s + o.litres, 0),
     [todayOrders]);
+
+  // Cart orders still in motion — confirmed or out for delivery.
+  const activeDeliveries = useMemo(() =>
+    myOrders.filter((o) => o.orderType === "cart" && ["confirmed", "in_transit"].includes(o.status)),
+    [myOrders]);
+
+  // Performance — derived from this vendor's lifetime cart orders.
+  const perf = useMemo(() => {
+    const cart = myOrders.filter((o) => o.orderType === "cart");
+    const handled   = cart.filter((o) => o.status !== "pending");
+    const rejected  = cart.filter((o) => o.status === "rejected" || o.status === "cancelled");
+    const delivered = cart.filter((o) => o.status === "delivered");
+    const acceptance = handled.length ? Math.round(((handled.length - rejected.length) / handled.length) * 100) : 100;
+    const completion = handled.length ? Math.round((delivered.length / handled.length) * 100) : 0;
+    const avgOrder   = delivered.length ? delivered.reduce((s, o) => s + o.total, 0) / delivered.length : 0;
+    return { acceptance, completion, avgOrder, handled: handled.length };
+  }, [myOrders]);
 
   const recentOrders = myOrders.slice(0, 5);
 
@@ -112,10 +187,9 @@ export function Dashboard() {
 
   const toggleOpen = async () => {
     if (!vendor || toggling) return;
+    tap();
     setToggling(true);
     try {
-      // The realtime subscription on the vendors table pushes the new value
-      // back automatically — no need for an extra round-trip fetch here.
       await updateVendorProfile(vendor.id, { isOpen: !vendor.isOpen });
       toast.success(vendor.isOpen ? "Store closed" : "You're now open for orders!");
     } catch { toast.error("Failed to update status"); }
@@ -124,19 +198,22 @@ export function Dashboard() {
 
   const handleAccept = async (orderId: string) => {
     if (!vendor || acting) return;
+    tap();
     setActing(orderId);
     try {
       await acceptOrder(orderId, vendor.id);
+      success();
       toast.success("Order accepted");
     } catch { toast.error("Action failed"); }
     finally { setActing(null); }
   };
 
   const handleReject = async (orderId: string) => {
-    if (acting) return;
+    if (acting || !vendor) return;
+    warn();
     setActing(orderId);
     try {
-      await rejectOrder(orderId);
+      await rejectOrder(orderId, vendor.id);
       toast.success("Order rejected");
     } catch { toast.error("Action failed"); }
     finally { setActing(null); }
@@ -144,14 +221,18 @@ export function Dashboard() {
 
   const handleAdvance = async (order: VendorOrder) => {
     if (acting) return;
+    tap();
     const next = order.status === "confirmed" ? "in_transit" : "delivered";
     setActing(order.id);
     try {
       await updateOrderStatus(order.id, next);
+      if (next === "delivered") success();
       toast.success(next === "in_transit" ? "Order out for delivery" : "Order marked as delivered!");
     } catch { toast.error("Action failed"); }
     finally { setActing(null); }
   };
+
+  const recurringCount = unclaimedSchedules.length + unclaimedSubscriptions.length;
 
   return (
     <div className="animate-fade-in">
@@ -172,12 +253,12 @@ export function Dashboard() {
             </div>
           </div>
           <button
-            onClick={() => navigate("/orders")}
-            className="relative w-10 h-10 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center"
+            onClick={() => { tap(); navigate("/orders"); }}
+            className="relative w-10 h-10 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center active:scale-90 transition-transform"
           >
             <Bell className="h-[18px] w-[18px] text-white" />
             {newOrders.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 rounded-full text-[10px] font-extrabold text-white flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 rounded-full text-[10px] font-extrabold text-white flex items-center justify-center animate-pop-in">
                 {newOrders.length}
               </span>
             )}
@@ -214,25 +295,18 @@ export function Dashboard() {
 
       {/* ── Today Stats ── */}
       <div className="px-4 -mt-4 grid grid-cols-3 gap-2.5 mb-4">
-        {[
-          { label: "Today's Orders", value: String(todayOrders.length),  icon: ShoppingBag, bg: "bg-orange-50",  ic: "text-orange-500",  border: "border-orange-100", to: "/orders"   },
-          { label: "Revenue Today",  value: `₹${todayRevenue}`,          icon: TrendingUp,  bg: "bg-emerald-50", ic: "text-emerald-600", border: "border-emerald-100", to: "/earnings" },
-          { label: "Litres Deliv.",  value: `${todayLitres}L`,           icon: Droplets,    bg: "bg-blue-50",    ic: "text-blue-500",    border: "border-blue-100",    to: "/orders"   },
-        ].map((s) => (
-          <button key={s.label} onClick={() => navigate(s.to)} className={`bg-white rounded-2xl shadow-md border ${s.border} p-3 text-left active:scale-95 transition-transform`}>
-            <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center mb-2`}>
-              <s.icon className={`h-4 w-4 ${s.ic}`} strokeWidth={1.8} />
-            </div>
-            <p className="text-[10px] text-slate-400 font-medium leading-tight">{s.label}</p>
-            <p className="text-[17px] font-extrabold text-slate-900 leading-tight mt-0.5">{s.value}</p>
-          </button>
-        ))}
+        <StatTile label="Today's Orders" value={todayOrders.length} icon={ShoppingBag}
+          bg="bg-orange-50" ic="text-orange-500" border="border-orange-100" onClick={() => navigate("/orders")} />
+        <StatTile label="Revenue Today" value={todayRevenue} prefix="₹" icon={TrendingUp}
+          bg="bg-emerald-50" ic="text-emerald-600" border="border-emerald-100" onClick={() => navigate("/earnings")} />
+        <StatTile label="Litres Deliv." value={todayLitres} suffix="L" icon={Droplets}
+          bg="bg-blue-50" ic="text-blue-500" border="border-blue-100" onClick={() => navigate("/orders")} />
       </div>
 
       <div className="px-4 space-y-4">
         {/* ── New Orders Alert ── */}
         {newOrders.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 animate-pop-in">
             <div className="flex items-center gap-2.5 mb-3">
               <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
                 <Zap className="h-4 w-4 text-amber-600" />
@@ -257,14 +331,14 @@ export function Dashboard() {
                   <button
                     disabled={acting === order.id}
                     onClick={() => handleAccept(order.id)}
-                    className="flex-1 py-1.5 bg-emerald-600 text-white text-xs font-extrabold rounded-lg flex items-center justify-center gap-1 disabled:opacity-60"
+                    className="flex-1 py-1.5 bg-emerald-600 text-white text-xs font-extrabold rounded-lg flex items-center justify-center gap-1 disabled:opacity-60 active:scale-95 transition-transform"
                   >
                     <CheckCircle2 className="h-3 w-3" /> Accept
                   </button>
                   <button
                     disabled={acting === order.id}
                     onClick={() => handleReject(order.id)}
-                    className="flex-1 py-1.5 bg-red-50 text-red-600 text-xs font-extrabold rounded-lg border border-red-100 flex items-center justify-center gap-1 disabled:opacity-60"
+                    className="flex-1 py-1.5 bg-red-50 text-red-600 text-xs font-extrabold rounded-lg border border-red-100 flex items-center justify-center gap-1 disabled:opacity-60 active:scale-95 transition-transform"
                   >
                     <XCircle className="h-3 w-3" /> Reject
                   </button>
@@ -273,7 +347,7 @@ export function Dashboard() {
             ))}
             {newOrders.length > 2 && (
               <button
-                onClick={() => navigate("/orders")}
+                onClick={() => { tap(); navigate("/orders"); }}
                 className="w-full py-2 text-xs font-extrabold text-amber-700 bg-amber-100 rounded-xl"
               >
                 +{newOrders.length - 2} more — View all orders
@@ -282,14 +356,151 @@ export function Dashboard() {
           </div>
         )}
 
+        {/* ── Active Deliveries ── */}
+        {activeDeliveries.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2">
+                <Truck className="h-4 w-4 text-violet-600" />
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  Out for Delivery
+                </h3>
+                <span className="text-[10px] font-extrabold bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">
+                  {activeDeliveries.length}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4">
+              {activeDeliveries.map((order) => (
+                <div key={order.id}
+                  className="bg-white rounded-2xl border border-violet-100 shadow-sm p-3.5 shrink-0 w-[200px]">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-xs font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</p>
+                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${STATUS_COLOR[order.status]}`}>
+                      {STATUS_LABEL[order.status]}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 truncate mb-0.5">{order.customer}</p>
+                  <p className="text-[11px] text-slate-400 truncate mb-2.5">{order.items}</p>
+                  <button
+                    disabled={acting === order.id}
+                    onClick={() => handleAdvance(order)}
+                    className="w-full py-2 bg-violet-600 text-white text-[11px] font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60 active:scale-95 transition-transform"
+                  >
+                    <Truck className="h-3.5 w-3.5" />
+                    {order.status === "confirmed" ? "Mark Dispatched" : "Mark Delivered"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Recurring to Claim ── */}
+        {recurringCount > 0 && (
+          <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 bg-teal-100 rounded-xl flex items-center justify-center shrink-0">
+                  <CalendarDays className="h-4 w-4 text-teal-700" />
+                </div>
+                <div>
+                  <p className="text-sm font-extrabold text-teal-900">
+                    {recurringCount} recurring order{recurringCount > 1 ? "s" : ""} to claim
+                  </p>
+                  <p className="text-xs text-teal-600">Claim to own all future deliveries</p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {unclaimedSchedules.slice(0, 2).map((s) => (
+                <div key={s.id} className="bg-white rounded-xl p-3 border border-teal-100 shadow-sm flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <CalendarDays className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+                      <p className="text-xs font-extrabold text-slate-900 truncate">{s.customer}</p>
+                    </div>
+                    <p className="text-[11px] text-slate-400 truncate ml-5">{s.productName} · {s.frequency} · ₹{s.total}/delivery</p>
+                  </div>
+                  <button
+                    disabled={claimingId === s.id}
+                    onClick={() => handleClaimSchedule(s)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white text-[11px] font-extrabold rounded-lg disabled:opacity-60 shrink-0 active:scale-95 transition-transform"
+                  >
+                    <Star className="h-3 w-3" /> Claim
+                  </button>
+                </div>
+              ))}
+              {unclaimedSubscriptions.slice(0, 2).map((s) => (
+                <div key={s.id} className="bg-white rounded-xl p-3 border border-indigo-100 shadow-sm flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <RefreshCw className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                      <p className="text-xs font-extrabold text-slate-900 truncate">{s.customer}</p>
+                    </div>
+                    <p className="text-[11px] text-slate-400 truncate ml-5">{s.items} · ₹{s.total}/mo</p>
+                  </div>
+                  <button
+                    disabled={claimingId === s.id}
+                    onClick={() => handleClaimSubscription(s)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-[11px] font-extrabold rounded-lg disabled:opacity-60 shrink-0 active:scale-95 transition-transform"
+                  >
+                    <Star className="h-3 w-3" /> Claim
+                  </button>
+                </div>
+              ))}
+              {recurringCount > 4 && (
+                <button
+                  onClick={() => { tap(); navigate("/orders"); }}
+                  className="w-full py-2 text-xs font-extrabold text-teal-700 bg-teal-100 rounded-xl"
+                >
+                  +{recurringCount - 4} more — View Recurring tab
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Performance Insights ── */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+          <div className="flex items-center gap-2 mb-3.5">
+            <Gauge className="h-4 w-4 text-indigo-600" />
+            <h3 className="text-sm font-extrabold text-slate-900">Performance</h3>
+            <span className="ml-auto text-[10px] text-slate-400 font-medium">{perf.handled} orders handled</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2.5">
+            {[
+              { label: "Acceptance", value: `${perf.acceptance}%`,
+                tone: perf.acceptance >= 80 ? "text-emerald-600" : perf.acceptance >= 50 ? "text-amber-600" : "text-rose-600",
+                ring: perf.acceptance },
+              { label: "Completion", value: `${perf.completion}%`,
+                tone: perf.completion >= 80 ? "text-emerald-600" : perf.completion >= 50 ? "text-amber-600" : "text-rose-600",
+                ring: perf.completion },
+              { label: "Avg Order", value: inr(perf.avgOrder), tone: "text-indigo-600", ring: null },
+            ].map((m) => (
+              <div key={m.label} className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className={`text-lg font-extrabold ${m.tone} leading-none`}>{m.value}</p>
+                <p className="text-[10px] text-slate-400 font-medium mt-1">{m.label}</p>
+                {m.ring !== null && (
+                  <div className="mt-1.5 h-1 rounded-full bg-slate-200 overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-700 ${
+                      m.ring >= 80 ? "bg-emerald-500" : m.ring >= 50 ? "bg-amber-500" : "bg-rose-500"
+                    }`} style={{ width: `${m.ring}%` }} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* ── Weekly Revenue Chart ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
           <div className="flex items-center justify-between mb-4">
-            <button onClick={() => navigate("/earnings")} className="text-left">
+            <button onClick={() => { tap(); navigate("/earnings"); }} className="text-left">
               <p className="text-[11px] text-slate-400 font-medium">Total Revenue</p>
               <p className="text-2xl font-extrabold text-slate-900">₹{totalRevenue.toLocaleString()}</p>
             </button>
-            <button onClick={() => navigate("/earnings")} className="text-right">
+            <button onClick={() => { tap(); navigate("/earnings"); }} className="text-right">
               <p className="text-[11px] text-slate-400 font-medium">Pending Payout</p>
               <p className="text-lg font-extrabold text-indigo-600">₹{pendingPayout.toLocaleString()}</p>
             </button>
@@ -308,27 +519,32 @@ export function Dashboard() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-extrabold text-slate-900">Recent Orders</h3>
-            <button onClick={() => navigate("/orders")} className="flex items-center gap-0.5 text-xs font-bold text-indigo-600">
+            <button onClick={() => { tap(); navigate("/orders"); }} className="flex items-center gap-0.5 text-xs font-bold text-indigo-600">
               See all <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>
 
-          {recentOrders.length === 0 ? (
+          {loading ? (
+            <SkeletonList count={3} />
+          ) : recentOrders.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-100 py-10 text-center">
-              <ShoppingBag className="h-8 w-8 text-slate-200 mx-auto mb-2" />
-              <p className="text-sm text-slate-400 font-medium">No orders yet</p>
-              <p className="text-xs text-slate-300 mt-1">Orders will appear here</p>
+              <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center mx-auto mb-3">
+                <Package className="h-7 w-7 text-slate-300" />
+              </div>
+              <p className="text-sm text-slate-500 font-semibold">No orders yet</p>
+              <p className="text-xs text-slate-400 mt-1">New orders from customers will appear here</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {recentOrders.map((order) => {
+            <div className="space-y-2 stagger">
+              {recentOrders.map((order, i) => {
                 const color = STATUS_COLOR[order.status] ?? "bg-slate-100 text-slate-600";
                 const label = STATUS_LABEL[order.status] ?? order.status;
                 const canAdvance = order.status === "confirmed" || order.status === "in_transit";
                 let timeStr = "";
                 try { timeStr = format(parseISO(order.placedAt), "h:mm a"); } catch { /* skip */ }
                 return (
-                  <div key={order.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+                  <div key={order.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4"
+                    style={{ animationDelay: `${i * 45}ms` }}>
                     <div
                       className="flex items-start justify-between cursor-pointer active:opacity-75"
                       onClick={() => navigate("/orders")}
@@ -350,7 +566,7 @@ export function Dashboard() {
                       <button
                         disabled={acting === order.id}
                         onClick={() => handleAdvance(order)}
-                        className="w-full py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60"
+                        className="w-full py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60 active:scale-[0.98] transition-transform"
                       >
                         <Truck className="h-3 w-3" />
                         {order.status === "confirmed" ? "Mark Out for Delivery" : "Mark as Delivered"}
@@ -362,6 +578,22 @@ export function Dashboard() {
             </div>
           )}
         </div>
+
+        {/* ── Tip card ── */}
+        {!loading && (
+          <div className="bg-gradient-to-r from-indigo-50 to-violet-50 rounded-2xl border border-indigo-100 p-4 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
+              <Target className="h-5 w-5 text-indigo-600" />
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              {newOrders.length > 0
+                ? "Accept new orders quickly to keep your acceptance rate high."
+                : vendor?.isOpen
+                ? "You're open and ready. Keep stock updated so customers always see fresh availability."
+                : "Your store is closed — open it from the toggle above to start receiving orders."}
+            </p>
+          </div>
+        )}
 
         <div className="h-2" />
       </div>

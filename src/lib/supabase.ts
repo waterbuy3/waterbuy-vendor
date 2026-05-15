@@ -317,15 +317,22 @@ export function subscribeNewOrders(
 
   refetch();
 
+  // Debounce: this channel is unfiltered (any orders change fires it), so
+  // collapse bursts into a single refetch instead of one query per event.
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleRefetch = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; refetch(); }, 250);
+  };
+
   const channel = supabase
     .channel("new-orders-cart")
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, refetch)
-    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" }, refetch)
-    .on("postgres_changes", { event: "DELETE", schema: "public", table: "orders" }, refetch)
+    .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, scheduleRefetch)
     .subscribe();
 
   return () => {
     mounted = false;
+    if (timer) clearTimeout(timer);
     supabase!.removeChannel(channel);
   };
 }
@@ -397,11 +404,16 @@ export function subscribeUnclaimedSchedules(
   };
 
   refetch();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleRefetch = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; refetch(); }, 250);
+  };
   const ch = supabase
     .channel("unclaimed-schedules")
-    .on("postgres_changes", { event: "*", schema: "public", table: "schedules" }, refetch)
+    .on("postgres_changes", { event: "*", schema: "public", table: "schedules" }, scheduleRefetch)
     .subscribe();
-  return () => { supabase!.removeChannel(ch); };
+  return () => { if (timer) clearTimeout(timer); supabase!.removeChannel(ch); };
 }
 
 /** Schedules claimed by this vendor. */
@@ -449,11 +461,16 @@ export function subscribeUnclaimedSubscriptions(
   };
 
   refetch();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleRefetch = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; refetch(); }, 250);
+  };
   const ch = supabase
     .channel("unclaimed-subscriptions")
-    .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, refetch)
+    .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, scheduleRefetch)
     .subscribe();
-  return () => { supabase!.removeChannel(ch); };
+  return () => { if (timer) clearTimeout(timer); supabase!.removeChannel(ch); };
 }
 
 /** Subscription orders claimed by this vendor. */
@@ -517,6 +534,7 @@ export async function markScheduleDelivered(
     status:      "delivered",
     order_type:  "schedule",
     schedule_id: schedule.id,
+    placed_at:   new Date().toISOString(),
     delivered_at: new Date().toISOString(),
   });
 }
@@ -540,6 +558,7 @@ export async function markSubscriptionDelivered(
     status:      "delivered",
     order_type:  "subscription",
     schedule_id: subscription.id,
+    placed_at:   new Date().toISOString(),
     delivered_at: new Date().toISOString(),
   });
 }
@@ -549,8 +568,16 @@ export async function acceptOrder(orderId: string, vendorId: string): Promise<vo
   await supabase.from("orders").update({ status: "confirmed", vendor_id: vendorId }).eq("id", orderId);
 }
 
-export async function rejectOrder(orderId: string): Promise<void> {
-  await updateOrderStatus(orderId, "rejected");
+/**
+ * Reject a cart order. Assigns vendor_id so the rejected order stays visible
+ * in this vendor's "Cancelled" tab — otherwise it would vanish from every list
+ * (no longer pending for the New pool, never owned for the My-Orders pool).
+ */
+export async function rejectOrder(orderId: string, vendorId?: string): Promise<void> {
+  if (!supabase) return;
+  const update: Record<string, unknown> = { status: "rejected" };
+  if (vendorId) update.vendor_id = vendorId;
+  await supabase.from("orders").update(update).eq("id", orderId);
 }
 
 // ─── Products ─────────────────────────────────────────────────────────────────

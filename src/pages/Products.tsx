@@ -1,13 +1,15 @@
 import { useEffect, useState, useMemo } from "react";
 import {
   Plus, Package, Pencil, X, Save, Loader2, Search,
-  Droplets, Minus, ChevronDown, ChevronUp,
+  Droplets, Minus, ChevronDown, ChevronUp, AlertTriangle, ArrowDownUp,
 } from "lucide-react";
 import {
   subscribeVendorProducts, upsertProduct, toggleProductActive,
   type VendorProduct,
 } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { tap, success, inr } from "@/lib/ui";
+import { SkeletonList } from "@/components/Skeleton";
 import { toast } from "sonner";
 
 const EMPTY: Omit<VendorProduct, "id" | "vendorId"> = {
@@ -17,6 +19,16 @@ const EMPTY: Omit<VendorProduct, "id" | "vendorId"> = {
 
 const UNITS = ["Bottle", "Can", "Pack", "Jar", "Sachet", "Litre"] as const;
 const CATEGORIES = ["individual", "corporate", "bulk", "subscription"] as const;
+
+/** Stock at or below this is flagged as "low" (but still in stock). */
+const LOW_STOCK = 10;
+
+type ProductSort = "name" | "stock" | "price";
+const PSORT_LABEL: Record<ProductSort, string> = {
+  name:  "Name (A–Z)",
+  stock: "Lowest stock",
+  price: "Highest price",
+};
 
 function ProductSheet({ product, vendorId, onClose }: {
   product: Partial<VendorProduct>;
@@ -33,6 +45,7 @@ function ProductSheet({ product, vendorId, onClose }: {
     setSaving(true);
     try {
       await upsertProduct(vendorId, form);
+      success();
       toast.success(form.id ? "Product updated" : "Product added!");
       onClose();
     } catch { toast.error("Failed to save product"); }
@@ -209,15 +222,27 @@ function ProductSheet({ product, vendorId, onClose }: {
 export function Products() {
   const { vendor } = useAuth();
   const [products, setProducts] = useState<VendorProduct[]>([]);
+  const [loaded, setLoaded]     = useState(false);
   const [editing, setEditing]   = useState<Partial<VendorProduct> | null>(null);
   const [query, setQuery]       = useState("");
   const [filter, setFilter]     = useState<"all" | "active" | "inactive">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [sort, setSort]         = useState<ProductSort>("name");
+  const [sortOpen, setSortOpen] = useState(false);
 
   useEffect(() => {
     if (!vendor?.id) return;
-    return subscribeVendorProducts(vendor.id, setProducts);
+    return subscribeVendorProducts(vendor.id, (p) => { setProducts(p); setLoaded(true); });
   }, [vendor?.id]);
+
+  // Catalog health — drives the header stats and low-stock banner.
+  const stats = useMemo(() => {
+    const active   = products.filter((p) => p.active);
+    const outOf    = products.filter((p) => p.stock === 0);
+    const low      = products.filter((p) => p.stock > 0 && p.stock <= LOW_STOCK);
+    const catValue = products.reduce((s, p) => s + p.price * p.stock, 0);
+    return { active: active.length, outOf, low, catValue };
+  }, [products]);
 
   const visible = useMemo(() => {
     let list = products;
@@ -227,14 +252,22 @@ export function Products() {
       const q = query.toLowerCase();
       list = list.filter((p) => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
     }
-    return list;
-  }, [products, filter, query]);
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      if (sort === "stock") return a.stock - b.stock;
+      if (sort === "price") return b.price - a.price;
+      return a.name.localeCompare(b.name);
+    });
+    return sorted;
+  }, [products, filter, query, sort]);
 
   const toggle = async (id: string, active: boolean) => {
+    tap();
     await toggleProductActive(id, active).catch(() => toast.error("Failed to update"));
   };
 
   const adjustStock = async (product: VendorProduct, delta: number) => {
+    tap();
     const newStock = Math.max(0, product.stock + delta);
     await upsertProduct(vendor!.id, { ...product, stock: newStock }).catch(() => toast.error("Failed to update stock"));
   };
@@ -246,11 +279,13 @@ export function Products() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h1 className="text-xl font-extrabold text-slate-900">Products</h1>
-            <p className="text-xs text-slate-400 mt-0.5">{products.length} in catalog · {products.filter((p) => p.active).length} active</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {products.length} in catalog · {stats.active} active · {inr(stats.catValue)} stock value
+            </p>
           </div>
           <button
-            onClick={() => setEditing({ ...EMPTY })}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white text-sm font-extrabold rounded-xl shadow-md shadow-indigo-200"
+            onClick={() => { tap(); setEditing({ ...EMPTY }); }}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white text-sm font-extrabold rounded-xl shadow-md shadow-indigo-200 active:scale-95 transition-transform"
           >
             <Plus className="h-4 w-4" /> Add
           </button>
@@ -266,11 +301,11 @@ export function Products() {
           />
         </div>
 
-        <div className="flex gap-1.5">
+        <div className="flex items-center gap-1.5">
           {(["all", "active", "inactive"] as const).map((f) => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
+              onClick={() => { tap(); setFilter(f); }}
               className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
                 filter === f
                   ? "bg-indigo-600 text-white shadow-sm shadow-indigo-200"
@@ -280,20 +315,75 @@ export function Products() {
               {f.charAt(0).toUpperCase() + f.slice(1)}
             </button>
           ))}
+          <div className="relative ml-auto">
+            <button
+              onClick={() => { tap(); setSortOpen((v) => !v); }}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 rounded-xl text-xs font-bold text-slate-500 active:scale-95 transition-transform"
+            >
+              <ArrowDownUp className="h-3.5 w-3.5" />
+            </button>
+            {sortOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setSortOpen(false)} />
+                <div className="absolute right-0 mt-1.5 z-20 bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden w-36 animate-fade-in">
+                  {(Object.keys(PSORT_LABEL) as ProductSort[]).map((k) => (
+                    <button key={k}
+                      onClick={() => { tap(); setSort(k); setSortOpen(false); }}
+                      className={`w-full text-left px-3 py-2.5 text-xs font-bold transition-colors ${
+                        sort === k ? "bg-indigo-50 text-indigo-700" : "text-slate-600 active:bg-slate-50"
+                      }`}
+                    >
+                      {PSORT_LABEL[k]}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="px-4 py-3 space-y-2">
-        {visible.length === 0 ? (
+        {/* Low / out-of-stock banner */}
+        {loaded && (stats.outOf.length > 0 || stats.low.length > 0) && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-3 animate-pop-in">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-extrabold text-amber-900">
+                {stats.outOf.length > 0 && `${stats.outOf.length} out of stock`}
+                {stats.outOf.length > 0 && stats.low.length > 0 && " · "}
+                {stats.low.length > 0 && `${stats.low.length} running low`}
+              </p>
+              <p className="text-[11px] text-amber-600 mt-0.5 truncate">
+                {[...stats.outOf, ...stats.low].slice(0, 3).map((p) => p.name).join(", ")}
+                {stats.outOf.length + stats.low.length > 3 && "…"}
+              </p>
+            </div>
+            <button
+              onClick={() => { tap(); setFilter("all"); setSort("stock"); }}
+              className="text-[11px] font-extrabold text-amber-700 bg-amber-100 px-2.5 py-1.5 rounded-lg shrink-0"
+            >
+              Review
+            </button>
+          </div>
+        )}
+
+        {!loaded ? (
+          <SkeletonList count={5} />
+        ) : visible.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-100 py-16 text-center mt-4">
-            <Package className="h-10 w-10 text-slate-200 mx-auto mb-3" />
-            <p className="text-sm font-semibold text-slate-400">
+            <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center mx-auto mb-3">
+              <Package className="h-8 w-8 text-slate-300" />
+            </div>
+            <p className="text-sm font-semibold text-slate-500">
               {query ? "No products match your search" : "No products yet"}
             </p>
             {!query && (
               <button
-                onClick={() => setEditing({ ...EMPTY })}
-                className="mt-4 px-5 py-2.5 bg-indigo-600 text-white text-sm font-extrabold rounded-xl"
+                onClick={() => { tap(); setEditing({ ...EMPTY }); }}
+                className="mt-4 px-5 py-2.5 bg-indigo-600 text-white text-sm font-extrabold rounded-xl active:scale-95 transition-transform"
               >
                 Add your first product
               </button>
@@ -302,11 +392,17 @@ export function Products() {
         ) : (
           visible.map((p) => {
             const isExpanded = expanded === p.id;
+            const isOut = p.stock === 0;
+            const isLow = p.stock > 0 && p.stock <= LOW_STOCK;
             return (
-              <div key={p.id} className={`bg-white rounded-2xl border shadow-sm transition-all ${p.active ? "border-slate-100" : "border-slate-100 opacity-70"}`}>
+              <div key={p.id} className={`bg-white rounded-2xl border shadow-sm transition-all ${
+                !p.active ? "border-slate-100 opacity-70"
+                : isOut ? "border-rose-200 ring-1 ring-rose-100"
+                : "border-slate-100"
+              }`}>
                 <button
                   className="w-full flex items-center gap-3 p-4 text-left"
-                  onClick={() => setExpanded(isExpanded ? null : p.id)}
+                  onClick={() => { tap(); setExpanded(isExpanded ? null : p.id); }}
                 >
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden ${p.active ? "bg-indigo-50" : "bg-slate-100"}`}>
                     {p.imageUrl ? (
@@ -325,8 +421,14 @@ export function Products() {
                       {!p.active && (
                         <span className="text-[9px] font-extrabold bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded-full shrink-0">OFF</span>
                       )}
+                      {p.active && isOut && (
+                        <span className="text-[9px] font-extrabold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-full shrink-0">OUT</span>
+                      )}
+                      {p.active && isLow && (
+                        <span className="text-[9px] font-extrabold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full shrink-0">LOW</span>
+                      )}
                     </div>
-                    <p className="text-[11px] text-slate-400">{p.size} {p.unit} · Stock: <span className={`font-bold ${p.stock === 0 ? "text-red-500" : "text-slate-600"}`}>{p.stock}</span></p>
+                    <p className="text-[11px] text-slate-400">{p.size} {p.unit} · Stock: <span className={`font-bold ${isOut ? "text-rose-500" : isLow ? "text-amber-600" : "text-slate-600"}`}>{p.stock}</span></p>
                   </div>
 
                   <div className="text-right shrink-0">

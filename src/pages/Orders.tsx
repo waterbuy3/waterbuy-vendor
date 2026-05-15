@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   ShoppingBag, CheckCircle2, XCircle, Truck, MapPin, Phone,
   CreditCard, Package, Droplets, X, Search, ChevronRight,
-  MessageCircle, Clock, CalendarDays, RefreshCw, Star,
+  MessageCircle, Clock, CalendarDays, RefreshCw, Star, ArrowDownUp,
 } from "lucide-react";
 import {
   acceptOrder, rejectOrder, updateOrderStatus,
@@ -13,8 +13,27 @@ import {
 } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useVendorData } from "@/context/VendorDataContext";
-import { format, formatDistanceToNow, parseISO } from "date-fns";
+import { tap, success, warn } from "@/lib/ui";
+import { SkeletonList } from "@/components/Skeleton";
+import { format, formatDistanceToNow, parseISO, isToday, isYesterday } from "date-fns";
 import { toast } from "sonner";
+
+type SortKey = "recent" | "oldest" | "value";
+const SORT_LABEL: Record<SortKey, string> = {
+  recent: "Newest first",
+  oldest: "Oldest first",
+  value:  "Highest value",
+};
+
+/** Bucket an order's placed date into a human group label. */
+function dateBucket(iso: string): string {
+  try {
+    const d = parseISO(iso);
+    if (isToday(d)) return "Today";
+    if (isYesterday(d)) return "Yesterday";
+    return format(d, "d MMM yyyy");
+  } catch { return "Earlier"; }
+}
 
 const TABS = ["All", "New", "Active", "Delivered", "Cancelled", "Recurring"] as const;
 type Tab = (typeof TABS)[number];
@@ -50,6 +69,12 @@ const NEXT_LABEL: Record<string, string> = {
 function timeAgo(str: string): string {
   try { return formatDistanceToNow(parseISO(str), { addSuffix: true }); }
   catch { return ""; }
+}
+
+/** Format a yyyy-MM-dd due date as "16 May" for display. */
+function fmtDue(iso: string): string {
+  try { return format(parseISO(iso), "d MMM"); }
+  catch { return iso; }
 }
 
 function filterOrders(orders: VendorOrder[], tab: Tab): VendorOrder[] {
@@ -328,7 +353,7 @@ function RecurringScheduleCard({
           </div>
           <div className="flex items-center gap-1 text-indigo-700 bg-indigo-50 px-2 py-1 rounded-lg">
             <CalendarDays className="h-3.5 w-3.5" />
-            <span className="font-bold">Next: {nextDue}</span>
+            <span className="font-bold">Next: {fmtDue(nextDue)}</span>
           </div>
         </div>
       )}
@@ -344,13 +369,17 @@ function RecurringScheduleCard({
             className="flex-1 py-2.5 bg-teal-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60">
             <Star className="h-3.5 w-3.5" /> Claim Schedule
           </button>
-        ) : (
-          <button disabled={acting || schedule.status === "paused"} onClick={handleDeliver}
-            className="flex-1 py-2.5 bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            {schedule.status === "paused" ? "Paused by customer" : "Mark Delivered"}
-          </button>
-        )}
+        ) : (() => {
+          const today = new Date().toISOString().slice(0, 10);
+          const canDeliver = today >= nextDue && schedule.status !== "paused";
+          return (
+            <button disabled={acting || !canDeliver} onClick={handleDeliver}
+              className="flex-1 py-2.5 bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {schedule.status === "paused" ? "Paused by customer" : !canDeliver ? `Due ${nextDue}` : "Mark Delivered"}
+            </button>
+          );
+        })()}
         <a href={mapsLink} target="_blank" rel="noreferrer"
           className="w-10 h-10 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-100 flex items-center justify-center shrink-0">
           <MapPin className="h-4 w-4" />
@@ -446,7 +475,7 @@ function RecurringSubscriptionCard({
           </div>
           <div className="flex items-center gap-1 text-indigo-700 bg-indigo-50 px-2 py-1 rounded-lg">
             <CalendarDays className="h-3.5 w-3.5" />
-            <span className="font-bold">Next: {nextDue}</span>
+            <span className="font-bold">Next: {fmtDue(nextDue)}</span>
           </div>
         </div>
       )}
@@ -462,12 +491,17 @@ function RecurringSubscriptionCard({
             className="flex-1 py-2.5 bg-indigo-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60">
             <Star className="h-3.5 w-3.5" /> Claim Subscription
           </button>
-        ) : (
-          <button disabled={acting} onClick={handleDeliver}
-            className="flex-1 py-2.5 bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60">
-            <CheckCircle2 className="h-3.5 w-3.5" /> Mark Delivered
-          </button>
-        )}
+        ) : (() => {
+          const today = new Date().toISOString().slice(0, 10);
+          const canDeliver = today >= nextDue;
+          return (
+            <button disabled={acting || !canDeliver} onClick={handleDeliver}
+              className="flex-1 py-2.5 bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {!canDeliver ? `Due ${fmtDue(nextDue)}` : "Mark Delivered"}
+            </button>
+          );
+        })()}
         <a href={mapsLink} target="_blank" rel="noreferrer"
           className="w-10 h-10 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-100 flex items-center justify-center shrink-0">
           <MapPin className="h-4 w-4" />
@@ -548,15 +582,87 @@ function RecurringTab() {
   );
 }
 
+// ─── Cart order card ──────────────────────────────────────────────────────────
+
+function OrderCard({ order, acting, onSelect, onAction, index }: {
+  order: VendorOrder;
+  acting: string | null;
+  onSelect: (o: VendorOrder) => void;
+  onAction: (action: "accept" | "reject" | "advance", id: string) => void;
+  index: number;
+}) {
+  const meta = STATUS_META[order.status] ?? STATUS_META.pending;
+  const isNew    = order.status === "pending" && !order.vendorId;
+  const isActive = order.status === "confirmed" || order.status === "in_transit";
+  return (
+    <button onClick={() => { tap(); onSelect(order); }}
+      style={{ animationDelay: `${index * 45}ms` }}
+      className={`w-full bg-white rounded-2xl border shadow-sm p-4 text-left transition-all active:scale-[0.98] ${isNew ? "border-amber-200 ring-1 ring-amber-100" : "border-slate-100"}`}>
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex-1 min-w-0 mr-3">
+          <div className="flex items-center gap-2 mb-0.5">
+            <p className="text-sm font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</p>
+            {isNew && (
+              <span className="text-[9px] font-extrabold bg-amber-500 text-white px-1.5 py-0.5 rounded-full animate-pulse">NEW</span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 truncate">{order.customer} · {order.items}</p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-sm font-extrabold text-slate-900">₹{order.total}</p>
+          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${meta.bg} ${meta.text}`}>
+            {meta.label}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          <Clock className="h-3 w-3 text-slate-300" />
+          <span className="text-[10px] text-slate-400">{timeAgo(order.placedAt)}</span>
+        </div>
+        <ChevronRight className="h-4 w-4 text-slate-300" />
+      </div>
+
+      {isNew && (
+        <div className="flex gap-2 mt-3">
+          <button disabled={acting === order.id}
+            onClick={(e) => { e.stopPropagation(); onAction("accept", order.id); }}
+            className="flex-1 py-2 min-h-[40px] bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60 active:scale-95 transition-transform">
+            <CheckCircle2 className="h-3.5 w-3.5" /> Accept
+          </button>
+          <button disabled={acting === order.id}
+            onClick={(e) => { e.stopPropagation(); onAction("reject", order.id); }}
+            className="flex-1 py-2 min-h-[40px] bg-red-50 text-red-600 text-xs font-extrabold rounded-xl border border-red-100 flex items-center justify-center gap-1.5 disabled:opacity-60 active:scale-95 transition-transform">
+            <XCircle className="h-3.5 w-3.5" /> Reject
+          </button>
+        </div>
+      )}
+
+      {isActive && (
+        <div className="mt-3">
+          <button disabled={acting === order.id}
+            onClick={(e) => { e.stopPropagation(); onAction("advance", order.id); }}
+            className="w-full py-2 min-h-[40px] bg-indigo-50 text-indigo-700 text-xs font-extrabold rounded-xl border border-indigo-200 flex items-center justify-center gap-1.5 disabled:opacity-60 active:scale-[0.98] transition-transform">
+            <Truck className="h-3.5 w-3.5" /> {NEXT_LABEL[order.status] ?? "Advance"}
+          </button>
+        </div>
+      )}
+    </button>
+  );
+}
+
 // ─── Main Orders page ─────────────────────────────────────────────────────────
 
 export function Orders() {
   const { vendor } = useAuth();
-  const { myOrders, newOrders, unclaimedSchedules, mySchedules, unclaimedSubscriptions, mySubscriptions } = useVendorData();
+  const { myOrders, newOrders, unclaimedSchedules, mySchedules, unclaimedSubscriptions, mySubscriptions, loading } = useVendorData();
   const [tab,      setTab]      = useState<Tab>("All");
   const [selected, setSelected] = useState<VendorOrder | null>(null);
   const [query,    setQuery]    = useState("");
   const [acting,   setActing]   = useState<string | null>(null);
+  const [sort,     setSort]     = useState<SortKey>("recent");
+  const [sortOpen, setSortOpen] = useState(false);
 
   useEffect(() => {
     if (!selected) return;
@@ -568,15 +674,19 @@ export function Orders() {
 
   const handleAction = useCallback(async (action: "accept" | "reject" | "advance", id: string) => {
     if (acting) return;
+    if (action === "reject") warn(); else tap();
     setActing(id);
     try {
       if (action === "accept") await acceptOrder(id, vendor!.id);
-      else if (action === "reject") await rejectOrder(id);
+      else if (action === "reject") await rejectOrder(id, vendor!.id);
       else {
         const order =
           myOrders.find((o) => o.id === id) ??
           newOrders.find((o) => o.id === id);
-        if (order && NEXT_STATUS[order.status]) await updateOrderStatus(id, NEXT_STATUS[order.status]);
+        if (order && NEXT_STATUS[order.status]) {
+          await updateOrderStatus(id, NEXT_STATUS[order.status]);
+          if (NEXT_STATUS[order.status] === "delivered") success();
+        }
       }
       toast.success(action === "accept" ? "Order accepted" : action === "reject" ? "Order rejected" : "Status updated");
       if (action !== "advance") setSelected(null);
@@ -600,15 +710,35 @@ export function Orders() {
 
   const visible = useMemo(() => {
     const pool = tab === "New" ? newOrders : cartOrders;
-    const base = filterOrders(pool, tab);
-    if (!query.trim()) return base;
-    const q = query.toLowerCase();
-    return base.filter((o) =>
-      o.customer.toLowerCase().includes(q) ||
-      o.id.slice(-6).toLowerCase().includes(q) ||
-      o.items.toLowerCase().includes(q)
-    );
-  }, [cartOrders, newOrders, tab, query]);
+    let base = filterOrders(pool, tab);
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      base = base.filter((o) =>
+        o.customer.toLowerCase().includes(q) ||
+        o.id.slice(-6).toLowerCase().includes(q) ||
+        o.items.toLowerCase().includes(q)
+      );
+    }
+    const sorted = [...base];
+    sorted.sort((a, b) => {
+      if (sort === "value") return b.total - a.total;
+      const ta = Date.parse(a.placedAt) || 0;
+      const tb = Date.parse(b.placedAt) || 0;
+      return sort === "oldest" ? ta - tb : tb - ta;
+    });
+    return sorted;
+  }, [cartOrders, newOrders, tab, query, sort]);
+
+  // Group the visible list into dated sections for rendering.
+  const grouped = useMemo(() => {
+    const map = new Map<string, VendorOrder[]>();
+    for (const o of visible) {
+      const key = dateBucket(o.placedAt);
+      const arr = map.get(key);
+      if (arr) arr.push(o); else map.set(key, [o]);
+    }
+    return Array.from(map.entries());
+  }, [visible]);
 
   return (
     <div className="animate-fade-in">
@@ -647,75 +777,74 @@ export function Orders() {
 
       {/* Cart orders list */}
       {tab !== "Recurring" && (
-        <div className="px-4 py-3 space-y-2">
-          {visible.length === 0 ? (
+        <div className="px-4 py-3">
+          {/* Result count + sort */}
+          {(loading || visible.length > 0) && (
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-slate-400">
+                {loading ? "Loading…" : `${visible.length} order${visible.length === 1 ? "" : "s"}`}
+              </p>
+              <div className="relative">
+                <button
+                  onClick={() => { tap(); setSortOpen((v) => !v); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 active:scale-95 transition-transform"
+                >
+                  <ArrowDownUp className="h-3.5 w-3.5 text-slate-400" />
+                  {SORT_LABEL[sort]}
+                </button>
+                {sortOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setSortOpen(false)} />
+                    <div className="absolute right-0 mt-1.5 z-20 bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden w-40 animate-fade-in">
+                      {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+                        <button key={k}
+                          onClick={() => { tap(); setSort(k); setSortOpen(false); }}
+                          className={`w-full text-left px-3.5 py-2.5 text-xs font-bold transition-colors ${
+                            sort === k ? "bg-indigo-50 text-indigo-700" : "text-slate-600 active:bg-slate-50"
+                          }`}
+                        >
+                          {SORT_LABEL[k]}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {loading ? (
+            <SkeletonList count={5} />
+          ) : visible.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-100 py-16 text-center mt-4">
-              <ShoppingBag className="h-8 w-8 text-slate-200 mx-auto mb-3" />
-              <p className="text-sm font-semibold text-slate-400">
+              <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center mx-auto mb-3">
+                <ShoppingBag className="h-7 w-7 text-slate-300" />
+              </div>
+              <p className="text-sm font-semibold text-slate-500">
                 {query ? "No orders match your search" : "No orders here"}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {query ? "Try a different name or order ID" : "Orders in this tab will show up here"}
               </p>
             </div>
           ) : (
-            visible.map((order) => {
-              const meta = STATUS_META[order.status] ?? STATUS_META.pending;
-              const isNew    = order.status === "pending" && !order.vendorId;
-              const isActive = order.status === "confirmed" || order.status === "in_transit";
-              return (
-                <button key={order.id} onClick={() => setSelected(order)}
-                  className={`w-full bg-white rounded-2xl border shadow-sm p-4 text-left transition-all active:scale-[0.98] ${isNew ? "border-amber-200 ring-1 ring-amber-100" : "border-slate-100"}`}>
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1 min-w-0 mr-3">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <p className="text-sm font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</p>
-                        {isNew && (
-                          <span className="text-[9px] font-extrabold bg-amber-500 text-white px-1.5 py-0.5 rounded-full animate-pulse">NEW</span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-500 truncate">{order.customer} · {order.items}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-extrabold text-slate-900">₹{order.total}</p>
-                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${meta.bg} ${meta.text}`}>
-                        {meta.label}
-                      </span>
-                    </div>
+            <div className="space-y-4">
+              {grouped.map(([label, orders]) => (
+                <div key={label}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">{label}</p>
+                    <div className="flex-1 h-px bg-slate-100" />
+                    <span className="text-[10px] font-bold text-slate-300">{orders.length}</span>
                   </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-3 w-3 text-slate-300" />
-                      <span className="text-[10px] text-slate-400">{timeAgo(order.placedAt)}</span>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-slate-300" />
+                  <div className="space-y-2 stagger">
+                    {orders.map((order, i) => (
+                      <OrderCard key={order.id} order={order} index={i} acting={acting}
+                        onSelect={setSelected} onAction={handleAction} />
+                    ))}
                   </div>
-
-                  {isNew && (
-                    <div className="flex gap-2 mt-3">
-                      <button disabled={acting === order.id}
-                        onClick={(e) => { e.stopPropagation(); handleAction("accept", order.id); }}
-                        className="flex-1 py-2 min-h-[40px] bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Accept
-                      </button>
-                      <button disabled={acting === order.id}
-                        onClick={(e) => { e.stopPropagation(); handleAction("reject", order.id); }}
-                        className="flex-1 py-2 min-h-[40px] bg-red-50 text-red-600 text-xs font-extrabold rounded-xl border border-red-100 flex items-center justify-center gap-1.5 disabled:opacity-60">
-                        <XCircle className="h-3.5 w-3.5" /> Reject
-                      </button>
-                    </div>
-                  )}
-
-                  {isActive && (
-                    <div className="mt-3">
-                      <button disabled={acting === order.id}
-                        onClick={(e) => { e.stopPropagation(); handleAction("advance", order.id); }}
-                        className="w-full py-2 min-h-[40px] bg-indigo-50 text-indigo-700 text-xs font-extrabold rounded-xl border border-indigo-200 flex items-center justify-center gap-1.5 disabled:opacity-60">
-                        <Truck className="h-3.5 w-3.5" /> {NEXT_LABEL[order.status] ?? "Advance"}
-                      </button>
-                    </div>
-                  )}
-                </button>
-              );
-            })
+                </div>
+              ))}
+            </div>
           )}
           <div className="h-2" />
         </div>

@@ -1,14 +1,27 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Building2, Phone, MapPin, Landmark, KeyRound, LogOut,
   ChevronRight, Droplets, Save, Loader2, Eye, EyeOff,
   ToggleLeft, ToggleRight, Percent, X, Mail,
+  HelpCircle, ChevronDown, ShieldCheck,
 } from "lucide-react";
 import { updateVendorProfile, vendorSignOut, supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { tap } from "@/lib/ui";
 import { format } from "date-fns";
 import { toast } from "sonner";
+
+const FAQS: { q: string; a: string }[] = [
+  { q: "How do I receive new orders?",
+    a: "Keep your store Open. New cart orders appear under Orders › New — accept them to confirm delivery." },
+  { q: "What are recurring orders?",
+    a: "Schedules and subscriptions are repeat deliveries. Claim one from the Recurring tab to own all its future deliveries." },
+  { q: "When do I get paid?",
+    a: "Payouts run on a weekly cycle. Your pending balance is shown on the Earnings page after the platform commission." },
+  { q: "Why is a product hidden from customers?",
+    a: "Inactive products and items with zero stock are not shown. Toggle a product Active and keep stock above zero." },
+];
 
 type Section = "profile" | "bank" | "password" | null;
 
@@ -147,6 +160,25 @@ export function Settings() {
     ? vendor.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
     : "V";
 
+  const [faqOpen, setFaqOpen] = useState<number | null>(null);
+
+  // Profile completeness — drives the setup banner.
+  const completeness = useMemo(() => {
+    const checks: [string, boolean][] = [
+      ["Business name",  !!vendor?.name?.trim()],
+      ["Phone number",   !!vendor?.phone?.trim()],
+      ["Service area",   !!vendor?.area?.trim()],
+      ["Bank name",      !!vendor?.bankName?.trim()],
+      ["Account number", !!vendor?.bankAccount?.trim()],
+      ["IFSC code",      !!vendor?.bankIfsc?.trim()],
+    ];
+    const done = checks.filter(([, ok]) => ok).length;
+    return {
+      pct: Math.round((done / checks.length) * 100),
+      missing: checks.filter(([, ok]) => !ok).map(([l]) => l),
+    };
+  }, [vendor]);
+
   return (
     <div className="animate-fade-in">
       {/* Header */}
@@ -182,6 +214,40 @@ export function Settings() {
             <Droplets className="h-8 w-8 text-white/20" strokeWidth={1.5} />
           </div>
         </div>
+
+        {/* Profile completeness */}
+        {completeness.pct < 100 ? (
+          <button
+            onClick={() => {
+              tap();
+              setOpenSection(completeness.missing.some((m) => /bank|account|ifsc/i.test(m)) && completeness.missing.length <= 3
+                ? "bank" : "profile");
+            }}
+            className="w-full bg-white rounded-2xl border border-amber-200 shadow-sm p-4 text-left animate-pop-in"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-extrabold text-slate-900">Complete your profile</p>
+              <span className="text-xs font-extrabold text-amber-600">{completeness.pct}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100 overflow-hidden mb-2.5">
+              <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-700"
+                style={{ width: `${completeness.pct}%` }} />
+            </div>
+            <p className="text-xs text-slate-500">
+              Add: <span className="font-semibold text-slate-700">{completeness.missing.join(", ")}</span>
+            </p>
+          </button>
+        ) : (
+          <div className="w-full bg-emerald-50 rounded-2xl border border-emerald-200 p-3.5 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+              <ShieldCheck className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-sm font-extrabold text-emerald-800">Profile complete</p>
+              <p className="text-xs text-emerald-600">You're all set to receive orders and payouts.</p>
+            </div>
+          </div>
+        )}
 
         {/* Store Status */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -222,7 +288,7 @@ export function Settings() {
           </div>
 
           <button
-            onClick={() => setOpenSection("profile")}
+            onClick={() => { tap(); setOpenSection("profile"); }}
             className="w-full flex items-center gap-3 px-4 py-4 border-b border-slate-50 active:bg-slate-50 transition-colors"
           >
             <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
@@ -236,7 +302,7 @@ export function Settings() {
           </button>
 
           <button
-            onClick={() => setOpenSection("bank")}
+            onClick={() => { tap(); setOpenSection("bank"); }}
             className="w-full flex items-center gap-3 px-4 py-4 active:bg-slate-50 transition-colors"
           >
             <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center shrink-0">
@@ -271,7 +337,7 @@ export function Settings() {
           </div>
 
           <button
-            onClick={() => setOpenSection("password")}
+            onClick={() => { tap(); setOpenSection("password"); }}
             className="w-full flex items-center gap-3 px-4 py-4 border-b border-slate-50 active:bg-slate-50 transition-colors"
           >
             <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
@@ -296,6 +362,33 @@ export function Settings() {
               <p className="text-xs text-slate-400 mt-0.5">Log out of your vendor account</p>
             </div>
           </button>
+        </div>
+
+        {/* Help & FAQ */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-50 flex items-center gap-2">
+            <HelpCircle className="h-3.5 w-3.5 text-slate-400" />
+            <p className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Help &amp; FAQ</p>
+          </div>
+          {FAQS.map((f, i) => {
+            const open = faqOpen === i;
+            return (
+              <div key={i} className={i < FAQS.length - 1 ? "border-b border-slate-50" : ""}>
+                <button
+                  onClick={() => { tap(); setFaqOpen(open ? null : i); }}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-slate-50 transition-colors"
+                >
+                  <p className="flex-1 text-sm font-bold text-slate-800">{f.q}</p>
+                  <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+                </button>
+                {open && (
+                  <p className="px-4 pb-4 -mt-1 text-xs text-slate-500 leading-relaxed animate-fade-in">
+                    {f.a}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* App info */}

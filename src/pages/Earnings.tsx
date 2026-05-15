@@ -1,9 +1,13 @@
 import { useState, useMemo } from "react";
-import { Wallet, TrendingUp, Droplets, ShoppingBag, Clock, CheckCircle2, ChevronRight } from "lucide-react";
+import {
+  Wallet, TrendingUp, Droplets, ShoppingBag, Clock, CheckCircle2,
+  ChevronRight, ArrowUpRight, ArrowDownRight, CalendarCheck, Receipt, Minus,
+} from "lucide-react";
 import { type VendorOrder } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useVendorData } from "@/context/VendorDataContext";
-import { format, parseISO, isToday, differenceInDays, isSameMonth } from "date-fns";
+import { useCountUp, tap, inr } from "@/lib/ui";
+import { format, parseISO, isToday, isYesterday, differenceInDays, isSameMonth, subMonths } from "date-fns";
 
 type Period = "today" | "week" | "month" | "all";
 
@@ -16,7 +20,7 @@ const PERIODS: { key: Period; label: string }[] = [
 
 function RevenueBar({ orders, period }: { orders: VendorOrder[]; period: Period }) {
   const days = useMemo(() => {
-    const n = period === "today" ? 24 : period === "week" ? 7 : period === "month" ? 30 : 7;
+    const n = period === "today" ? 24 : period === "week" ? 7 : 30;
     if (period === "today") {
       const arr = Array.from({ length: 24 }, (_, i) => ({ label: i % 6 === 0 ? `${i}h` : "", amount: 0 }));
       orders.filter((o) => o.status === "delivered").forEach((o) => {
@@ -93,6 +97,21 @@ function filterByPeriod(orders: VendorOrder[], period: Period): VendorOrder[] {
   });
 }
 
+/** Delivered orders from the period immediately before the selected one. */
+function filterPrevPeriod(orders: VendorOrder[], period: Period): VendorOrder[] {
+  const now = new Date();
+  return orders.filter((o) => {
+    if (o.status !== "delivered") return false;
+    try {
+      const d = parseISO(o.placedAt);
+      if (period === "today") return isYesterday(d);
+      if (period === "week")  { const diff = differenceInDays(now, d); return diff >= 7 && diff < 14; }
+      if (period === "month") return isSameMonth(d, subMonths(now, 1));
+      return false;
+    } catch { return false; }
+  });
+}
+
 export function Earnings() {
   const { vendor } = useAuth();
   const { myOrders, payouts, totalRevenue, totalDelivered, totalLitres, pendingPayout } = useVendorData();
@@ -103,6 +122,35 @@ export function Earnings() {
   const periodLitres  = useMemo(() => periodOrders.reduce((s, o) => s + o.litres, 0), [periodOrders]);
   const vendorShare   = totalRevenue * (1 - (vendor?.commissionPct ?? 10) / 100);
 
+  // Trend vs the previous comparable period.
+  const prevRevenue = useMemo(
+    () => filterPrevPeriod(myOrders, period).reduce((s, o) => s + o.total, 0),
+    [myOrders, period]);
+  const trend = useMemo(() => {
+    if (period === "all" || prevRevenue === 0) return null;
+    return Math.round(((periodRevenue - prevRevenue) / prevRevenue) * 100);
+  }, [period, periodRevenue, prevRevenue]);
+
+  const avgOrder = periodOrders.length ? periodRevenue / periodOrders.length : 0;
+
+  // Highest-revenue single day inside the selected period.
+  const bestDay = useMemo(() => {
+    const map = new Map<string, number>();
+    periodOrders.forEach((o) => {
+      try {
+        const k = format(parseISO(o.placedAt), "yyyy-MM-dd");
+        map.set(k, (map.get(k) ?? 0) + o.total);
+      } catch { /* skip */ }
+    });
+    let best: { date: string; amount: number } | null = null;
+    map.forEach((amount, date) => {
+      if (!best || amount > best.amount) best = { date, amount };
+    });
+    return best as { date: string; amount: number } | null;
+  }, [periodOrders]);
+
+  const animatedRevenue = useCountUp(periodRevenue);
+
   return (
     <div className="animate-fade-in">
       {/* Header */}
@@ -112,7 +160,7 @@ export function Earnings() {
           {PERIODS.map((p) => (
             <button
               key={p.key}
-              onClick={() => setPeriod(p.key)}
+              onClick={() => { tap(); setPeriod(p.key); }}
               className={`flex-1 py-2 rounded-xl text-xs font-extrabold transition-all ${
                 period === p.key
                   ? "bg-indigo-600 text-white shadow-sm shadow-indigo-200"
@@ -130,14 +178,62 @@ export function Earnings() {
         <div className="relative bg-gradient-to-br from-violet-700 via-indigo-700 to-blue-700 rounded-2xl p-5 shadow-xl shadow-indigo-300/40 overflow-hidden">
           <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full bg-white/10 blur-2xl pointer-events-none" />
           <div className="absolute bottom-0 left-0 w-20 h-20 rounded-full bg-violet-400/20 blur-xl pointer-events-none" />
-          <p className="relative text-xs font-extrabold text-indigo-200 uppercase tracking-wider mb-1">
-            {PERIODS.find((p) => p.key === period)?.label} Revenue
+          <div className="relative flex items-center justify-between mb-1">
+            <p className="text-xs font-extrabold text-indigo-200 uppercase tracking-wider">
+              {PERIODS.find((p) => p.key === period)?.label} Revenue
+            </p>
+            {trend !== null && (
+              <span className={`flex items-center gap-0.5 text-[11px] font-extrabold px-2 py-0.5 rounded-full ${
+                trend > 0 ? "bg-emerald-400/25 text-emerald-200"
+                : trend < 0 ? "bg-rose-400/25 text-rose-200"
+                : "bg-white/15 text-white/70"
+              }`}>
+                {trend > 0 ? <ArrowUpRight className="h-3 w-3" />
+                  : trend < 0 ? <ArrowDownRight className="h-3 w-3" />
+                  : <Minus className="h-3 w-3" />}
+                {Math.abs(trend)}%
+              </span>
+            )}
+          </div>
+          <p className="relative text-4xl font-extrabold text-white mb-1">
+            ₹{Math.round(animatedRevenue).toLocaleString("en-IN")}
           </p>
-          <p className="relative text-4xl font-extrabold text-white mb-1">₹{periodRevenue.toLocaleString()}</p>
-          <p className="relative text-sm text-indigo-200">{periodOrders.length} orders · {periodLitres}L delivered</p>
+          <p className="relative text-sm text-indigo-200">
+            {periodOrders.length} orders · {periodLitres}L delivered
+            {trend !== null && (
+              <span className="text-indigo-300">
+                {" "}· {trend >= 0 ? "up" : "down"} from {inr(prevRevenue)}
+              </span>
+            )}
+          </p>
 
           <div className="relative mt-4">
             <RevenueBar orders={myOrders} period={period} />
+          </div>
+        </div>
+
+        {/* Insights — avg order value + best day */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center mb-2">
+              <Receipt className="h-4 w-4 text-indigo-600" strokeWidth={1.8} />
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium">Avg Order Value</p>
+            <p className="text-lg font-extrabold text-slate-900">{inr(avgOrder)}</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center mb-2">
+              <CalendarCheck className="h-4 w-4 text-emerald-600" strokeWidth={1.8} />
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium">Best Day</p>
+            <p className="text-lg font-extrabold text-slate-900">
+              {bestDay ? inr(bestDay.amount) : "—"}
+            </p>
+            {bestDay && (
+              <p className="text-[10px] text-slate-400 font-medium">
+                {format(parseISO(bestDay.date), "d MMM")}
+              </p>
+            )}
           </div>
         </div>
 
