@@ -24,6 +24,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isConfigured) { setLoading(false); return; }
 
+    // Safety: force loading off after 8 s in case Supabase never responds
+    const timeout = setTimeout(() => setLoading(false), 8000);
+
     const unsubAuth = subscribeToAuth((u) => {
       userRef.current = u;
       unsubVendorRef.current?.();
@@ -33,14 +36,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         unsubVendorRef.current = subscribeVendorProfile(u.id, (v) => {
           setVendor(v);
           setLoading(false);
+          clearTimeout(timeout);
         });
       } else {
         setVendor(null);
         setLoading(false);
+        clearTimeout(timeout);
       }
     });
 
     return () => {
+      clearTimeout(timeout);
       unsubAuth();
       unsubVendorRef.current?.();
     };

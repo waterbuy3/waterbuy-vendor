@@ -110,10 +110,9 @@ export function subscribeToAuth(
   callback: (user: SupabaseUser | null) => void
 ): () => void {
   if (!supabase) { callback(null); return () => {}; }
+  // onAuthStateChange fires INITIAL_SESSION immediately — no need for getSession()
+  // which would cause a double callback and race condition in AuthContext.
   const { data } = supabase.auth.onAuthStateChange((_e, session) => {
-    callback(session?.user ?? null);
-  });
-  supabase.auth.getSession().then(({ data: { session } }) => {
     callback(session?.user ?? null);
   });
   return () => data.subscription.unsubscribe();

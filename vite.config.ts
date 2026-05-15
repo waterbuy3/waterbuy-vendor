@@ -31,7 +31,7 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
         // Serve index.html for any navigation request the SW can't match,
         // so hard-refreshing /orders or /settings doesn't 404.
-        navigationFallback: "/index.html",
+        navigateFallback: "/index.html",
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
