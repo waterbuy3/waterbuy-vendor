@@ -2,11 +2,11 @@ import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ShoppingBag, Droplets, TrendingUp, Wallet, Zap, ChevronRight,
-  Bell, ToggleLeft, ToggleRight, CheckCircle2, XCircle, Clock,
+  Bell, ToggleLeft, ToggleRight, CheckCircle2, XCircle, Clock, Truck,
 } from "lucide-react";
 import {
-  subscribeVendorOrders, getEarningSummary, updateVendorProfile, acceptOrder, rejectOrder,
-  type VendorOrder,
+  subscribeVendorOrders, getEarningSummary, updateVendorProfile,
+  acceptOrder, rejectOrder, updateOrderStatus, type VendorOrder,
 } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { format, isToday, subDays, parseISO } from "date-fns";
@@ -79,7 +79,7 @@ function WeekChart({ orders }: { orders: VendorOrder[] }) {
 }
 
 export function Dashboard() {
-  const { vendor } = useAuth();
+  const { vendor, refreshVendor } = useAuth();
   const navigate = useNavigate();
   const [orders, setOrders] = useState<VendorOrder[]>([]);
   const [summary, setSummary] = useState({ totalRevenue: 0, totalOrders: 0, totalLitres: 0, pendingPayout: 0, commissionPct: 10 });
@@ -93,9 +93,19 @@ export function Dashboard() {
     return unsub;
   }, [vendor?.id]);
 
-  const todayOrders = useMemo(() =>
-    orders.filter((o) => { try { return isToday(parseISO(o.placedAt)); } catch { return false; } }),
+  // Orders assigned to this vendor
+  const myOrders = useMemo(() =>
+    orders.filter((o) => o.vendorId === vendor?.id),
+    [orders, vendor?.id]);
+
+  // Unassigned pending orders any vendor can claim
+  const newOrders = useMemo(() =>
+    orders.filter((o) => !o.vendorId && o.status === "pending"),
     [orders]);
+
+  const todayOrders = useMemo(() =>
+    myOrders.filter((o) => { try { return isToday(parseISO(o.placedAt)); } catch { return false; } }),
+    [myOrders]);
 
   const todayRevenue = useMemo(() =>
     todayOrders.filter((o) => o.status === "delivered").reduce((s, o) => s + o.total, 0),
@@ -105,8 +115,7 @@ export function Dashboard() {
     todayOrders.filter((o) => o.status === "delivered").reduce((s, o) => s + o.litres, 0),
     [todayOrders]);
 
-  const newOrders = orders.filter((o) => o.status === "pending");
-  const recentOrders = orders.slice(0, 5);
+  const recentOrders = myOrders.slice(0, 5);
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -122,6 +131,7 @@ export function Dashboard() {
     setToggling(true);
     try {
       await updateVendorProfile(vendor.id, { isOpen: !vendor.isOpen });
+      await refreshVendor();
       toast.success(vendor.isOpen ? "Store closed" : "You're now open for orders!");
     } catch { toast.error("Failed to update status"); }
     finally { setToggling(false); }
@@ -143,6 +153,17 @@ export function Dashboard() {
     try {
       await rejectOrder(orderId);
       toast.success("Order rejected");
+    } catch { toast.error("Action failed"); }
+    finally { setActing(null); }
+  };
+
+  const handleAdvance = async (order: VendorOrder) => {
+    if (acting) return;
+    const next = order.status === "confirmed" ? "in_transit" : "delivered";
+    setActing(order.id);
+    try {
+      await updateOrderStatus(order.id, next);
+      toast.success(next === "in_transit" ? "Order out for delivery" : "Order marked as delivered!");
     } catch { toast.error("Action failed"); }
     finally { setActing(null); }
   };
@@ -247,14 +268,14 @@ export function Dashboard() {
                   <button
                     disabled={acting === order.id}
                     onClick={() => handleAccept(order.id)}
-                    className="flex-1 py-1.5 bg-teal-600 text-white text-xs font-extrabold rounded-lg flex items-center justify-center gap-1"
+                    className="flex-1 py-1.5 bg-teal-600 text-white text-xs font-extrabold rounded-lg flex items-center justify-center gap-1 disabled:opacity-60"
                   >
                     <CheckCircle2 className="h-3 w-3" /> Accept
                   </button>
                   <button
                     disabled={acting === order.id}
                     onClick={() => handleReject(order.id)}
-                    className="flex-1 py-1.5 bg-red-50 text-red-600 text-xs font-extrabold rounded-lg border border-red-100 flex items-center justify-center gap-1"
+                    className="flex-1 py-1.5 bg-red-50 text-red-600 text-xs font-extrabold rounded-lg border border-red-100 flex items-center justify-center gap-1 disabled:opacity-60"
                   >
                     <XCircle className="h-3 w-3" /> Reject
                   </button>
@@ -284,7 +305,7 @@ export function Dashboard() {
               <p className="text-lg font-extrabold text-teal-600">₹{summary.pendingPayout.toLocaleString()}</p>
             </div>
           </div>
-          <WeekChart orders={orders} />
+          <WeekChart orders={myOrders} />
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-50">
             <div className="flex items-center gap-2">
               <Wallet className="h-3.5 w-3.5 text-slate-400" />
@@ -312,26 +333,23 @@ export function Dashboard() {
           ) : (
             <div className="space-y-2">
               {recentOrders.map((order) => {
-                const isNew = order.status === "pending";
                 const color = STATUS_COLOR[order.status] ?? "bg-slate-100 text-slate-600";
                 const label = STATUS_LABEL[order.status] ?? order.status;
+                const canAdvance = order.status === "confirmed" || order.status === "in_transit";
                 let timeStr = "";
                 try { timeStr = format(parseISO(order.placedAt), "h:mm a"); } catch { /* skip */ }
                 return (
-                  <button
+                  <div
                     key={order.id}
-                    onClick={() => navigate("/orders")}
-                    className={`w-full bg-white rounded-2xl border shadow-sm p-4 text-left transition-all active:scale-[0.98] ${
-                      isNew ? "border-amber-200 ring-1 ring-amber-100" : "border-slate-100"
-                    }`}
+                    className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4"
                   >
-                    <div className="flex items-start justify-between">
+                    <div
+                      className="flex items-start justify-between cursor-pointer active:opacity-75"
+                      onClick={() => navigate("/orders")}
+                    >
                       <div className="flex-1 min-w-0 mr-3">
                         <div className="flex items-center gap-2 mb-0.5">
                           <p className="text-sm font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</p>
-                          {isNew && (
-                            <span className="text-[9px] font-extrabold bg-amber-500 text-white px-1.5 py-0.5 rounded-full">NEW</span>
-                          )}
                         </div>
                         <p className="text-xs text-slate-500 truncate">{order.customer} · {order.items}</p>
                       </div>
@@ -340,11 +358,21 @@ export function Dashboard() {
                         <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${color}`}>{label}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 mt-2">
+                    <div className="flex items-center gap-1 mt-2 mb-2">
                       <Clock className="h-3 w-3 text-slate-300" />
                       <span className="text-[10px] text-slate-400 font-medium">{timeStr}</span>
                     </div>
-                  </button>
+                    {canAdvance && (
+                      <button
+                        disabled={acting === order.id}
+                        onClick={() => handleAdvance(order)}
+                        className="w-full py-1.5 bg-teal-50 border border-teal-200 text-teal-700 text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60"
+                      >
+                        <Truck className="h-3 w-3" />
+                        {order.status === "confirmed" ? "Mark Out for Delivery" : "Mark as Delivered"}
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>

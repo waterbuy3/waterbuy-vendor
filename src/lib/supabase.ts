@@ -87,6 +87,12 @@ export interface Payout {
   createdAt: string;
 }
 
+export async function fetchVendorById(id: string): Promise<Vendor | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.from("vendors").select("*").eq("id", id).single();
+  return data ? rowToVendor(data as Record<string, unknown>) : null;
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export async function signInWithEmail(email: string, password: string) {
