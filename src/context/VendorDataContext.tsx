@@ -5,6 +5,7 @@ import {
   subscribeMyOrders,
   subscribeNewOrders,
   subscribeAllSchedules,
+  subscribeSubscriptions,
   subscribeVendorPayouts,
   type VendorOrder,
   type VendorSchedule,
@@ -13,11 +14,12 @@ import {
 import { useAuth } from "@/context/AuthContext";
 
 interface VendorDataContextValue {
-  myOrders:  VendorOrder[];
-  newOrders: VendorOrder[];
-  schedules: VendorSchedule[];
-  payouts:   Payout[];
-  loading:   boolean;
+  myOrders:      VendorOrder[];
+  newOrders:     VendorOrder[];
+  schedules:     VendorSchedule[];
+  subscriptions: VendorOrder[];
+  payouts:       Payout[];
+  loading:       boolean;
   // Pre-computed summary (avoids redundant getEarningSummary() calls)
   totalRevenue:   number;
   totalDelivered: number;
@@ -26,17 +28,18 @@ interface VendorDataContextValue {
 }
 
 const VendorDataContext = createContext<VendorDataContextValue>({
-  myOrders: [], newOrders: [], schedules: [], payouts: [], loading: true,
+  myOrders: [], newOrders: [], schedules: [], subscriptions: [], payouts: [], loading: true,
   totalRevenue: 0, totalDelivered: 0, totalLitres: 0, pendingPayout: 0,
 });
 
 export function VendorDataProvider({ children }: { children: ReactNode }) {
   const { vendor } = useAuth();
-  const [myOrders,  setMyOrders]  = useState<VendorOrder[]>([]);
-  const [newOrders, setNewOrders] = useState<VendorOrder[]>([]);
-  const [schedules, setSchedules] = useState<VendorSchedule[]>([]);
-  const [payouts,   setPayouts]   = useState<Payout[]>([]);
-  const [loading,   setLoading]   = useState(true);
+  const [myOrders,      setMyOrders]      = useState<VendorOrder[]>([]);
+  const [newOrders,     setNewOrders]     = useState<VendorOrder[]>([]);
+  const [schedules,     setSchedules]     = useState<VendorSchedule[]>([]);
+  const [subscriptions, setSubscriptions] = useState<VendorOrder[]>([]);
+  const [payouts,       setPayouts]       = useState<Payout[]>([]);
+  const [loading,       setLoading]       = useState(true);
 
   useEffect(() => {
     if (!vendor?.id) {
@@ -67,9 +70,10 @@ export function VendorDataProvider({ children }: { children: ReactNode }) {
     });
 
     const unsubSchedules = subscribeAllSchedules(setSchedules);
+    const unsubSubs = subscribeSubscriptions(setSubscriptions);
     const unsubPay = subscribeVendorPayouts(vendor.id, setPayouts);
 
-    return () => { unsubMy(); unsubNew(); unsubSchedules(); unsubPay(); };
+    return () => { unsubMy(); unsubNew(); unsubSchedules(); unsubSubs(); unsubPay(); };
   }, [vendor?.id]);
 
   const { totalRevenue, totalDelivered, totalLitres, pendingPayout } = useMemo(() => {
@@ -91,9 +95,9 @@ export function VendorDataProvider({ children }: { children: ReactNode }) {
   // underlying data actually changed (otherwise every parent render of
   // VendorDataProvider would re-render every consumer of useVendorData).
   const value = useMemo(() => ({
-    myOrders, newOrders, schedules, payouts, loading,
+    myOrders, newOrders, schedules, subscriptions, payouts, loading,
     totalRevenue, totalDelivered, totalLitres, pendingPayout,
-  }), [myOrders, newOrders, schedules, payouts, loading,
+  }), [myOrders, newOrders, schedules, subscriptions, payouts, loading,
        totalRevenue, totalDelivered, totalLitres, pendingPayout]);
 
   return (

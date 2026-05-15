@@ -88,6 +88,8 @@ export interface VendorOrder {
   orderType: string;
   placedAt: string;
   deliveredAt?: string;
+  // Set on a logged recurring delivery — points at its schedule/subscription.
+  sourceId?: string;
 }
 
 export interface VendorProduct {
@@ -225,11 +227,12 @@ function rowToOrder(row: Record<string, unknown>): VendorOrder {
     orderType:   (row.order_type as string) ?? "cart",
     placedAt:    (row.placed_at as string) ?? "",
     deliveredAt: (row.delivered_at as string) ?? undefined,
+    sourceId:    (row.source_id as string) ?? undefined,
   };
 }
 
 // Columns actually used by the app — avoids SELECT * overhead
-const ORDER_COLS = "id,user_id,vendor_id,customer,phone,items,total,litres,payment,address,status,order_type,placed_at,delivered_at";
+const ORDER_COLS = "id,user_id,vendor_id,customer,phone,items,total,litres,payment,address,status,order_type,placed_at,delivered_at,source_id";
 
 /** Vendor's own orders — realtime, limited to 200 most recent. */
 export function subscribeMyOrders(
@@ -306,6 +309,7 @@ export function subscribeNewOrders(
       .select(ORDER_COLS)
       .is("vendor_id", null)
       .eq("status", "pending")
+      .eq("order_type", "cart")
       .order("placed_at", { ascending: false })
       .limit(30);
     if (!mounted) return;
@@ -447,8 +451,10 @@ export async function toggleProductActive(productId: string, active: boolean): P
 export interface VendorSchedule {
   id: string;
   userId: string;
+  vendorId: string | null;
   customer: string;
   phone: string;
+  productId: string;
   productName: string;
   quantity: number;
   frequency: string;
@@ -464,8 +470,10 @@ function rowToSchedule(row: Record<string, unknown>): VendorSchedule {
   return {
     id:          row.id as string,
     userId:      (row.user_id as string) ?? "",
+    vendorId:    (row.vendor_id as string) ?? null,
     customer:    (row.customer as string) ?? "",
     phone:       (row.phone as string) ?? "",
+    productId:   (row.product_id as string) ?? "",
     productName: (row.product_name as string) ?? "",
     quantity:    (row.quantity as number) ?? 1,
     frequency:   (row.frequency as string) ?? "",
@@ -512,6 +520,93 @@ export function subscribeAllSchedules(
     .subscribe();
 
   return () => { supabase!.removeChannel(channel); };
+}
+
+/** Vendor claims ownership of a recurring schedule. */
+export async function claimSchedule(scheduleId: string, vendorId: string): Promise<void> {
+  if (!supabase) return;
+  await supabase.from("schedules").update({ vendor_id: vendorId }).eq("id", scheduleId);
+}
+
+// ─── Subscriptions (predefined plans) ────────────────────────────────────────
+// A subscription is an `orders` row with order_type='subscription' and no
+// source_id (the parent). Individual deliveries logged against it are separate
+// orders carrying source_id = the parent's id.
+
+/** All non-cancelled subscription parent orders — claimable pool + claimed. */
+export function subscribeSubscriptions(
+  callback: (orders: VendorOrder[]) => void
+): () => void {
+  if (!supabase) { callback([]); return () => {}; }
+
+  let mounted = true;
+
+  const refetch = async () => {
+    if (!mounted || !supabase) return;
+    const { data } = await supabase
+      .from("orders")
+      .select(ORDER_COLS)
+      .eq("order_type", "subscription")
+      .is("source_id", null)
+      .neq("status", "cancelled")
+      .order("placed_at", { ascending: false });
+    if (!mounted) return;
+    callback((data ?? []).map((r) => rowToOrder(r as Record<string, unknown>)));
+  };
+
+  refetch();
+
+  const channel = supabase
+    .channel("vendor-subscriptions")
+    .on("postgres_changes",
+      { event: "*", schema: "public", table: "orders", filter: "order_type=eq.subscription" },
+      refetch)
+    .subscribe();
+
+  return () => { mounted = false; supabase!.removeChannel(channel); };
+}
+
+/** Vendor claims a subscription — marks it delivered so its fee is earned. */
+export async function claimSubscription(orderId: string, vendorId: string): Promise<void> {
+  if (!supabase) return;
+  await supabase
+    .from("orders")
+    .update({ vendor_id: vendorId, status: "delivered", delivered_at: new Date().toISOString() })
+    .eq("id", orderId);
+}
+
+/** Record one fulfilled delivery of a schedule / subscription as an order. */
+export async function logRecurringDelivery(params: {
+  vendorId: string;
+  sourceType: "schedule" | "subscription";
+  sourceId: string;
+  userId: string;
+  customer: string;
+  phone: string;
+  address: string;
+  items: string;
+  total: number;
+  litres: number;
+}): Promise<void> {
+  if (!supabase) return;
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("orders").insert({
+    user_id:      params.userId,
+    vendor_id:    params.vendorId,
+    customer:     params.customer,
+    phone:        params.phone,
+    address:      params.address,
+    items:        params.items,
+    total:        params.total,
+    litres:       params.litres,
+    payment:      "prepaid",
+    status:       "delivered",
+    order_type:   params.sourceType,
+    source_id:    params.sourceId,
+    placed_at:    now,
+    delivered_at: now,
+  });
+  if (error) throw error;
 }
 
 // ─── Earnings / Payouts ───────────────────────────────────────────────────────

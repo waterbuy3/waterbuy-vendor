@@ -2,18 +2,19 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   ShoppingBag, CheckCircle2, XCircle, Truck, MapPin, Phone,
   CreditCard, Package, Droplets, X, Search, ChevronRight,
-  MessageCircle, Clock, CalendarDays, RefreshCw,
+  MessageCircle, Clock, CalendarDays, RefreshCw, Hand, Repeat,
 } from "lucide-react";
 import {
   acceptOrder, rejectOrder, updateOrderStatus,
+  claimSchedule, claimSubscription, logRecurringDelivery,
   type VendorOrder, type VendorSchedule,
 } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useVendorData } from "@/context/VendorDataContext";
-import { format, formatDistanceToNow, parseISO } from "date-fns";
+import { format, formatDistanceToNow, parseISO, addDays, addMonths } from "date-fns";
 import { toast } from "sonner";
 
-const TABS = ["All", "New", "Active", "Delivered", "Cancelled", "Scheduled"] as const;
+const TABS = ["All", "New", "Active", "Delivered", "Cancelled", "Recurring"] as const;
 type Tab = (typeof TABS)[number];
 
 const STATUS_META: Record<string, { label: string; bg: string; text: string }> = {
@@ -52,11 +53,244 @@ function timeAgo(str: string): string {
 function filterOrders(orders: VendorOrder[], tab: Tab): VendorOrder[] {
   switch (tab) {
     case "New":       return orders; // pool is already pre-filtered to unassigned pending
-    case "Active":    return orders.filter((o) => ["confirmed", "in_transit"].includes(o.status));
+    // Active is the one-time-order pipeline only — recurring deliveries are
+    // logged from the Recurring tab, not advanced through these steps.
+    case "Active":    return orders.filter((o) => ["confirmed", "in_transit"].includes(o.status) && o.orderType === "cart");
     case "Delivered": return orders.filter((o) => o.status === "delivered");
     case "Cancelled": return orders.filter((o) => o.status === "cancelled" || o.status === "rejected");
     default:          return orders;
   }
+}
+
+// ─── Recurring orders (schedules + subscriptions) ────────────────────────────
+
+interface RecurringItem {
+  kind: "schedule" | "subscription";
+  id: string;
+  userId: string;
+  customer: string;
+  phone: string;
+  address: string;
+  title: string;
+  subtitle: string;
+  items: string;            // text written onto each logged delivery order
+  frequency: string;
+  perDeliveryTotal: number; // schedule price per delivery; 0 for subscriptions
+  litres: number;
+  vendorId: string | null;
+  status: string;
+  startDate: string;        // anchors the first delivery
+  timeSlot?: string;
+}
+
+function scheduleToRecurring(s: VendorSchedule): RecurringItem {
+  return {
+    kind: "schedule",
+    id: s.id,
+    userId: s.userId,
+    customer: s.customer,
+    phone: s.phone,
+    address: s.address,
+    title: s.productName || "Scheduled delivery",
+    subtitle: `Qty ${s.quantity}`,
+    items: `${s.productName} × ${s.quantity}`,
+    frequency: s.frequency || "Once",
+    perDeliveryTotal: s.total,
+    litres: 0,
+    vendorId: s.vendorId,
+    status: s.status,
+    startDate: s.startDate,
+    timeSlot: s.timeSlot,
+  };
+}
+
+function subscriptionToRecurring(o: VendorOrder): RecurringItem {
+  // The customer app writes items as "Plan Name — Frequency".
+  const [planName, freq] = o.items.split("—").map((x) => x.trim());
+  return {
+    kind: "subscription",
+    id: o.id,
+    userId: o.userId,
+    customer: o.customer,
+    phone: o.phone,
+    address: o.address,
+    title: planName || o.items || "Subscription",
+    subtitle: `${freq || "Recurring"} plan · ₹${o.total}/mo`,
+    items: `${planName || "Subscription"} delivery`,
+    frequency: freq || "Monthly",
+    perDeliveryTotal: 0, // monthly fee already counted on the parent order
+    litres: 0,
+    vendorId: o.vendorId,
+    status: o.status,
+    startDate: o.placedAt,
+  };
+}
+
+function isOnce(freq: string): boolean {
+  return freq.trim().toLowerCase() === "once";
+}
+
+function nextAfter(freq: string, from: Date): Date {
+  switch (freq.trim().toLowerCase()) {
+    case "daily":           return addDays(from, 1);
+    case "alternate days":
+    case "alternate":       return addDays(from, 2);
+    case "weekly":          return addDays(from, 7);
+    case "monthly":         return addMonths(from, 1);
+    default:                return addDays(from, 1);
+  }
+}
+
+function safeDate(s: string): Date | null {
+  if (!s) return null;
+  try { const d = parseISO(s); return isNaN(d.getTime()) ? null : d; }
+  catch { return null; }
+}
+
+function recurringStats(item: RecurringItem, myOrders: VendorOrder[]) {
+  const deliveries = myOrders
+    .filter((o) => o.sourceId === item.id)
+    .sort((a, b) => (a.placedAt < b.placedAt ? 1 : -1)); // newest first
+  const count = deliveries.length;
+  const lastAt = count > 0 ? safeDate(deliveries[0].placedAt) : null;
+  const completed = isOnce(item.frequency) && count >= 1;
+  let nextDue: Date | null = null;
+  if (!completed) {
+    if (count === 0) nextDue = safeDate(item.startDate);
+    else if (lastAt) nextDue = nextAfter(item.frequency, lastAt);
+  }
+  return { count, completed, nextDue };
+}
+
+function RecurringCard({ item, mine, myOrders, busy, onClaim, onDeliver }: {
+  item: RecurringItem;
+  mine: boolean;
+  myOrders: VendorOrder[];
+  busy: boolean;
+  onClaim: (i: RecurringItem) => void;
+  onDeliver: (i: RecurringItem) => void;
+}) {
+  const stats = useMemo(() => recurringStats(item, myOrders), [item, myOrders]);
+  const paused = item.kind === "schedule" && item.status === "paused";
+  const cancelled = item.status === "cancelled";
+  const canDeliver = mine && !paused && !cancelled && !stats.completed;
+
+  const digits = item.phone?.replace(/\D/g, "") ?? "";
+  const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address)}`;
+  const waLink = digits
+    ? `https://wa.me/${digits.startsWith("91") ? digits : "91" + digits.slice(-10)}?text=${encodeURIComponent(`Hi ${item.customer}, your AquaPure delivery is on the way.`)}`
+    : null;
+
+  const badge = item.kind === "subscription"
+    ? { label: "Subscription", cls: "bg-indigo-100 text-indigo-700" }
+    : { label: "Schedule",     cls: "bg-teal-100 text-teal-700"   };
+
+  return (
+    <div className="w-full bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
+      <div className="flex items-start justify-between">
+        <div className="min-w-0 mr-2">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${badge.cls}`}>
+              {badge.label}
+            </span>
+            {paused && (
+              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                Paused
+              </span>
+            )}
+            {cancelled && (
+              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">
+                Cancelled
+              </span>
+            )}
+          </div>
+          <p className="text-sm font-extrabold text-slate-900 truncate">{item.title}</p>
+          <p className="text-xs text-slate-500 truncate">{item.customer} · {item.subtitle}</p>
+        </div>
+        <div className="text-right shrink-0">
+          {item.perDeliveryTotal > 0 && (
+            <p className="text-sm font-extrabold text-slate-900">₹{item.perDeliveryTotal}</p>
+          )}
+          <p className="text-[10px] text-slate-400">
+            {item.perDeliveryTotal > 0 ? "per delivery" : "prepaid plan"}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+        <span className="flex items-center gap-1">
+          <RefreshCw className="h-3.5 w-3.5 text-slate-400" /> {item.frequency}
+        </span>
+        {item.timeSlot && (
+          <span className="flex items-center gap-1">
+            <Clock className="h-3.5 w-3.5 text-slate-400" /> {item.timeSlot}
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-start gap-1.5 text-xs text-slate-500">
+        <MapPin className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
+        <span className="truncate">{item.address}</span>
+      </div>
+
+      {mine && (
+        <div className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
+          <span className="text-xs font-bold text-slate-600">{stats.count} delivered</span>
+          <span className="text-xs font-extrabold text-slate-900">
+            {stats.completed   ? "Completed"
+              : paused         ? "Paused by customer"
+              : cancelled      ? "Cancelled"
+              : stats.nextDue  ? `Next: ${format(stats.nextDue, "d MMM")}`
+              :                  "—"}
+          </span>
+        </div>
+      )}
+
+      {!mine ? (
+        <button
+          disabled={busy}
+          onClick={() => onClaim(item)}
+          className="w-full py-2.5 bg-indigo-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60"
+        >
+          <Hand className="h-3.5 w-3.5" /> Claim this {item.kind}
+        </button>
+      ) : (
+        <div className="flex gap-2">
+          {canDeliver && (
+            <button
+              disabled={busy}
+              onClick={() => onDeliver(item)}
+              className="flex-1 py-2.5 bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" /> Mark Delivered
+            </button>
+          )}
+          <a
+            href={mapsLink} target="_blank" rel="noreferrer"
+            className="py-2.5 px-3 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-100 flex items-center justify-center"
+          >
+            <MapPin className="h-3.5 w-3.5" />
+          </a>
+          {item.phone && (
+            <a
+              href={`tel:${item.phone}`}
+              className="py-2.5 px-3 bg-blue-50 text-blue-700 rounded-xl border border-blue-100 flex items-center justify-center"
+            >
+              <Phone className="h-3.5 w-3.5" />
+            </a>
+          )}
+          {waLink && (
+            <a
+              href={waLink} target="_blank" rel="noreferrer"
+              className="py-2.5 px-3 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 flex items-center justify-center"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function OrderDetailSheet({ order, onClose, onAction }: {
@@ -68,6 +302,8 @@ function OrderDetailSheet({ order, onClose, onAction }: {
   const meta = STATUS_META[order.status] ?? STATUS_META.pending;
   const stepIdx = ORDER_STEPS.findIndex((s) => s.key === order.status);
   const isCancelled = order.status === "cancelled" || order.status === "rejected";
+  // Recurring deliveries / subscriptions don't move through the cart pipeline.
+  const isCart = order.orderType === "cart";
 
   const doAction = async (action: "accept" | "reject" | "advance") => {
     setActing(true);
@@ -112,7 +348,7 @@ function OrderDetailSheet({ order, onClose, onAction }: {
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 px-5 pb-2 space-y-4">
           {/* Timeline */}
-          {!isCancelled && (
+          {isCart && !isCancelled && (
             <div className="bg-slate-50 rounded-2xl p-4">
               <div className="flex items-center gap-0">
                 {ORDER_STEPS.map((step, i) => {
@@ -137,6 +373,17 @@ function OrderDetailSheet({ order, onClose, onAction }: {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {!isCart && (
+            <div className="bg-indigo-50 rounded-2xl p-4 flex items-center gap-2.5">
+              <Repeat className="h-4 w-4 text-indigo-600 shrink-0" />
+              <p className="text-xs font-bold text-indigo-700">
+                {order.sourceId
+                  ? `Logged ${order.orderType} delivery`
+                  : `${order.orderType === "subscription" ? "Subscription" : "Recurring"} order — manage deliveries from the Recurring tab`}
+              </p>
             </div>
           )}
 
@@ -211,7 +458,7 @@ function OrderDetailSheet({ order, onClose, onAction }: {
 
         {/* Actions */}
         <div className="px-5 py-4 border-t border-slate-100 space-y-2 shrink-0 pb-safe">
-          {NEXT_STATUS[order.status] && (
+          {isCart && NEXT_STATUS[order.status] && (
             <button
               disabled={acting}
               onClick={() => doAction(order.status === "pending" ? "accept" : "advance")}
@@ -225,7 +472,7 @@ function OrderDetailSheet({ order, onClose, onAction }: {
               {NEXT_LABEL[order.status] ?? "Advance"}
             </button>
           )}
-          {order.status === "pending" && (
+          {isCart && order.status === "pending" && (
             <button
               disabled={acting}
               onClick={() => doAction("reject")}
@@ -237,7 +484,9 @@ function OrderDetailSheet({ order, onClose, onAction }: {
           {order.status === "delivered" && (
             <div className="flex items-center justify-center gap-2 py-3 text-emerald-600">
               <CheckCircle2 className="h-5 w-5" />
-              <span className="text-sm font-extrabold">Order completed successfully</span>
+              <span className="text-sm font-extrabold">
+                {order.sourceId ? "Delivery completed" : "Order completed successfully"}
+              </span>
             </div>
           )}
           {isCancelled && (
@@ -254,72 +503,16 @@ function OrderDetailSheet({ order, onClose, onAction }: {
   );
 }
 
-function ScheduledCard({ s }: { s: VendorSchedule }) {
-  const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}`;
-  const waLink = s.phone
-    ? `https://wa.me/${s.phone.replace(/\D/g, "").replace(/^(?!91)/, "91").slice(-12)}?text=${encodeURIComponent(`Hi ${s.customer}, your AquaPure scheduled delivery is confirmed.`)}`
-    : null;
-  return (
-    <div className="w-full bg-white rounded-2xl border border-teal-100 shadow-sm p-4 space-y-3">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2 mb-0.5">
-            <CalendarDays className="h-4 w-4 text-teal-600" />
-            <p className="text-sm font-extrabold text-slate-900">{s.customer}</p>
-          </div>
-          <p className="text-xs text-slate-500">{s.productName} × {s.quantity}</p>
-        </div>
-        <div className="text-right shrink-0">
-          <p className="text-sm font-extrabold text-slate-900">₹{s.total}</p>
-          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-            s.status === "active" ? "bg-teal-100 text-teal-700" : "bg-amber-100 text-amber-700"
-          }`}>
-            {s.status === "active" ? "Active" : "Paused"}
-          </span>
-        </div>
-      </div>
-      <div className="flex items-center gap-2 text-xs text-slate-500">
-        <RefreshCw className="h-3.5 w-3.5 text-slate-400" />
-        <span>{s.frequency}</span>
-        {s.timeSlot && <><span>·</span><span>{s.timeSlot}</span></>}
-      </div>
-      <div className="flex items-start gap-2 text-xs text-slate-500">
-        <MapPin className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
-        <span className="truncate">{s.address}</span>
-      </div>
-      <div className="flex gap-2 pt-1">
-        <a href={mapsLink} target="_blank" rel="noreferrer"
-          className="flex-1 py-2 bg-indigo-50 text-indigo-700 text-xs font-extrabold rounded-xl border border-indigo-100 flex items-center justify-center gap-1.5">
-          <MapPin className="h-3.5 w-3.5" /> Maps
-        </a>
-        {s.phone && (
-          <a href={`tel:${s.phone}`}
-            className="flex-1 py-2 bg-blue-50 text-blue-700 text-xs font-extrabold rounded-xl border border-blue-100 flex items-center justify-center gap-1.5">
-            <Phone className="h-3.5 w-3.5" /> Call
-          </a>
-        )}
-        {waLink && (
-          <a href={waLink} target="_blank" rel="noreferrer"
-            className="flex-1 py-2 bg-emerald-50 text-emerald-700 text-xs font-extrabold rounded-xl border border-emerald-100 flex items-center justify-center gap-1.5">
-            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-          </a>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function Orders() {
   const { vendor } = useAuth();
-  const { myOrders, newOrders, schedules } = useVendorData();
+  const { myOrders, newOrders, schedules, subscriptions } = useVendorData();
   const [tab,      setTab]      = useState<Tab>("All");
   const [selected, setSelected] = useState<VendorOrder | null>(null);
   const [query,    setQuery]    = useState("");
   const [acting,   setActing]   = useState<string | null>(null);
+  const [recActing, setRecActing] = useState<string | null>(null);
 
   // Keep selected order in sync when realtime updates arrive.
-  // Was previously a useMemo abused for side effects (setSelected during
-  // render) — move to an effect so React state writes happen after commit.
   useEffect(() => {
     if (!selected) return;
     const fresh =
@@ -328,8 +521,6 @@ export function Orders() {
     if (fresh && fresh.status !== selected.status) setSelected(fresh);
   }, [myOrders, newOrders, selected]);
 
-  // Stable handler — passed into OrderDetailSheet, so we don't want it to
-  // change identity on every render.
   const handleAction = useCallback(async (action: "accept" | "reject" | "advance", id: string) => {
     if (acting) return;
     setActing(id);
@@ -348,17 +539,62 @@ export function Orders() {
     finally { setActing(null); }
   }, [vendor, myOrders, newOrders, acting]);
 
+  // ── Recurring (schedules + subscriptions) ──
+  const recurringItems = useMemo<RecurringItem[]>(() => [
+    ...schedules.map(scheduleToRecurring),
+    ...subscriptions.map(subscriptionToRecurring),
+  ], [schedules, subscriptions]);
+
+  const myRecurring = useMemo(
+    () => recurringItems.filter((r) => r.vendorId === vendor?.id),
+    [recurringItems, vendor?.id]);
+  const claimableRecurring = useMemo(
+    () => recurringItems.filter((r) => !r.vendorId),
+    [recurringItems]);
+
+  const handleClaim = useCallback(async (item: RecurringItem) => {
+    if (recActing || !vendor) return;
+    setRecActing(item.id);
+    try {
+      if (item.kind === "schedule") await claimSchedule(item.id, vendor.id);
+      else await claimSubscription(item.id, vendor.id);
+      toast.success("Added to your recurring deliveries");
+    } catch { toast.error("Couldn't claim — try again"); }
+    finally { setRecActing(null); }
+  }, [recActing, vendor]);
+
+  const handleDeliver = useCallback(async (item: RecurringItem) => {
+    if (recActing || !vendor) return;
+    setRecActing(item.id);
+    try {
+      await logRecurringDelivery({
+        vendorId:   vendor.id,
+        sourceType: item.kind,
+        sourceId:   item.id,
+        userId:     item.userId,
+        customer:   item.customer,
+        phone:      item.phone,
+        address:    item.address,
+        items:      item.items,
+        total:      item.perDeliveryTotal,
+        litres:     item.litres,
+      });
+      toast.success("Delivery logged");
+    } catch { toast.error("Couldn't log delivery"); }
+    finally { setRecActing(null); }
+  }, [recActing, vendor]);
+
   const tabCounts = useMemo(() => ({
     All:       myOrders.length,
     New:       newOrders.length,
-    Active:    myOrders.filter((o) => ["confirmed","in_transit"].includes(o.status)).length,
+    Active:    myOrders.filter((o) => ["confirmed","in_transit"].includes(o.status) && o.orderType === "cart").length,
     Delivered: myOrders.filter((o) => o.status === "delivered").length,
     Cancelled: myOrders.filter((o) => o.status === "cancelled" || o.status === "rejected").length,
-    Scheduled: schedules.length,
-  }), [myOrders, newOrders, schedules]);
+    Recurring: claimableRecurring.length + myRecurring.length,
+  }), [myOrders, newOrders, claimableRecurring, myRecurring]);
 
   const visible = useMemo(() => {
-    // "New" tab shows claimable unassigned orders; all other tabs show this vendor's orders
+    // "New" shows claimable unassigned orders; other tabs show this vendor's orders
     const pool = tab === "New" ? newOrders : myOrders;
     const base = filterOrders(pool, tab);
     if (!query.trim()) return base;
@@ -409,23 +645,61 @@ export function Orders() {
         </div>
       </div>
 
-      {/* Scheduled tab — separate list */}
-      {tab === "Scheduled" && (
-        <div className="px-4 py-3 space-y-2">
-          {schedules.length === 0 ? (
+      {/* Recurring tab — claim + log deliveries */}
+      {tab === "Recurring" && (
+        <div className="px-4 py-3 space-y-4">
+          {claimableRecurring.length === 0 && myRecurring.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-100 py-16 text-center mt-4">
               <CalendarDays className="h-8 w-8 text-slate-200 mx-auto mb-3" />
-              <p className="text-sm font-semibold text-slate-400">No active scheduled deliveries</p>
+              <p className="text-sm font-semibold text-slate-400">No recurring orders yet</p>
+              <p className="text-xs text-slate-300 mt-1">Scheduled & subscription orders appear here</p>
             </div>
           ) : (
-            schedules.map((s) => <ScheduledCard key={s.id} s={s} />)
+            <>
+              {claimableRecurring.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-extrabold text-slate-400 uppercase tracking-wider px-1">
+                    Available to claim ({claimableRecurring.length})
+                  </p>
+                  {claimableRecurring.map((item) => (
+                    <RecurringCard
+                      key={`${item.kind}-${item.id}`}
+                      item={item}
+                      mine={false}
+                      myOrders={myOrders}
+                      busy={recActing === item.id}
+                      onClaim={handleClaim}
+                      onDeliver={handleDeliver}
+                    />
+                  ))}
+                </div>
+              )}
+              {myRecurring.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-extrabold text-slate-400 uppercase tracking-wider px-1">
+                    My recurring deliveries ({myRecurring.length})
+                  </p>
+                  {myRecurring.map((item) => (
+                    <RecurringCard
+                      key={`${item.kind}-${item.id}`}
+                      item={item}
+                      mine
+                      myOrders={myOrders}
+                      busy={recActing === item.id}
+                      onClaim={handleClaim}
+                      onDeliver={handleDeliver}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
           <div className="h-2" />
         </div>
       )}
 
       {/* Order list */}
-      {tab !== "Scheduled" && (
+      {tab !== "Recurring" && (
       <div className="px-4 py-3 space-y-2">
         {visible.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-100 py-16 text-center mt-4">
@@ -438,7 +712,7 @@ export function Orders() {
           visible.map((order) => {
             const meta = STATUS_META[order.status] ?? STATUS_META.pending;
             const isNew = order.status === "pending" && !order.vendorId;
-            const isActive = order.status === "confirmed" || order.status === "in_transit";
+            const isActive = (order.status === "confirmed" || order.status === "in_transit") && order.orderType === "cart";
             return (
               <button
                 key={order.id}
