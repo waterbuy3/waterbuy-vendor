@@ -86,6 +86,7 @@ export interface VendorOrder {
   address: string;
   status: string;
   orderType: string;
+  scheduleId?: string;
   placedAt: string;
   deliveredAt?: string;
 }
@@ -223,13 +224,14 @@ function rowToOrder(row: Record<string, unknown>): VendorOrder {
     address:     (row.address as string) ?? "",
     status:      (row.status as string) ?? "pending",
     orderType:   (row.order_type as string) ?? "cart",
+    scheduleId:  (row.schedule_id as string) ?? undefined,
     placedAt:    (row.placed_at as string) ?? "",
     deliveredAt: (row.delivered_at as string) ?? undefined,
   };
 }
 
 // Columns actually used by the app — avoids SELECT * overhead
-const ORDER_COLS = "id,user_id,vendor_id,customer,phone,items,total,litres,payment,address,status,order_type,placed_at,delivered_at";
+const ORDER_COLS = "id,user_id,vendor_id,customer,phone,items,total,litres,payment,address,status,order_type,schedule_id,placed_at,delivered_at";
 
 /** Vendor's own orders — realtime, limited to 200 most recent. */
 export function subscribeMyOrders(
@@ -329,11 +331,88 @@ export function subscribeNewOrders(
   };
 }
 
+function nextDeliveryDate(frequency: string): string | null {
+  const d = new Date();
+  switch (frequency.toLowerCase().trim()) {
+    case "daily":          d.setDate(d.getDate() + 1); break;
+    case "alternate days": d.setDate(d.getDate() + 2); break;
+    case "weekly":         d.setDate(d.getDate() + 7); break;
+    case "monthly":        d.setMonth(d.getMonth() + 1); break;
+    default:               return null; // "once" or unknown — no repeat
+  }
+  return d.toISOString();
+}
+
 export async function updateOrderStatus(orderId: string, status: string): Promise<void> {
   if (!supabase) return;
+
+  // Fetch the full order before updating so we have what we need for auto-generation.
+  const { data: orderRow } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .single();
+
   const update: Record<string, unknown> = { status };
   if (status === "delivered") update.delivered_at = new Date().toISOString();
   await supabase.from("orders").update(update).eq("id", orderId);
+
+  // Auto-generate next delivery order when this one is delivered.
+  if (status !== "delivered" || !orderRow) return;
+  const row = orderRow as Record<string, unknown>;
+  const orderType = (row.order_type as string) ?? "cart";
+
+  if (orderType === "schedule" && row.schedule_id) {
+    // Fetch the parent schedule to get frequency + check still active.
+    const { data: sched } = await supabase
+      .from("schedules")
+      .select("*")
+      .eq("id", row.schedule_id as string)
+      .single();
+    if (!sched || sched.status === "cancelled" || sched.status === "paused") return;
+    const nextAt = nextDeliveryDate(sched.frequency as string);
+    if (!nextAt) return;
+    await supabase.from("orders").insert({
+      user_id:     row.user_id,
+      customer:    sched.customer,
+      phone:       sched.phone,
+      items:       `${sched.product_name} × ${sched.quantity}`,
+      total:       sched.total,
+      payment:     "cod",
+      address:     sched.address,
+      litres:      0,
+      status:      "pending",
+      order_type:  "schedule",
+      schedule_id: sched.id,
+      placed_at:   nextAt,
+    });
+  } else if (orderType === "subscription") {
+    // Look up the user's active plan to determine next delivery frequency.
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("active_plan, name, phone, addresses")
+      .eq("uid", row.user_id as string)
+      .single();
+    if (!profile) return;
+    const plan = profile.active_plan as { frequency?: string; paused?: boolean } | null;
+    if (!plan || plan.paused) return;
+    const nextAt = nextDeliveryDate(plan.frequency ?? "");
+    if (!nextAt) return;
+    // Reuse the same items/total/address from the current order so the chain stays consistent.
+    await supabase.from("orders").insert({
+      user_id:    row.user_id,
+      customer:   row.customer,
+      phone:      row.phone,
+      items:      row.items,
+      total:      row.total,
+      payment:    "pending",
+      address:    row.address,
+      litres:     0,
+      status:     "pending",
+      order_type: "subscription",
+      placed_at:  nextAt,
+    });
+  }
 }
 
 export async function acceptOrder(orderId: string, vendorId: string): Promise<void> {
