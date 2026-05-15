@@ -70,6 +70,7 @@ export interface VendorOrder {
   payment: string;
   address: string;
   status: string;
+  orderType: string;
   placedAt: string;
   deliveredAt?: string;
 }
@@ -206,13 +207,14 @@ function rowToOrder(row: Record<string, unknown>): VendorOrder {
     payment:     (row.payment as string) ?? "",
     address:     (row.address as string) ?? "",
     status:      (row.status as string) ?? "pending",
+    orderType:   (row.order_type as string) ?? "cart",
     placedAt:    (row.placed_at as string) ?? "",
     deliveredAt: (row.delivered_at as string) ?? undefined,
   };
 }
 
 // Columns actually used by the app — avoids SELECT * overhead
-const ORDER_COLS = "id,user_id,vendor_id,customer,phone,items,total,litres,payment,address,status,placed_at,delivered_at";
+const ORDER_COLS = "id,user_id,vendor_id,customer,phone,items,total,litres,payment,address,status,order_type,placed_at,delivered_at";
 
 /** Vendor's own orders — realtime, limited to 200 most recent. */
 export function subscribeMyOrders(
@@ -325,7 +327,7 @@ export async function acceptOrder(orderId: string, vendorId: string): Promise<vo
 }
 
 export async function rejectOrder(orderId: string): Promise<void> {
-  await updateOrderStatus(orderId, "cancelled");
+  await updateOrderStatus(orderId, "rejected");
 }
 
 // ─── Products ─────────────────────────────────────────────────────────────────

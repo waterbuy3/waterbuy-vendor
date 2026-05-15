@@ -22,6 +22,7 @@ const STATUS_META: Record<string, { label: string; bg: string; text: string }> =
   in_transit: { label: "In Transit", bg: "bg-violet-100",  text: "text-violet-700"  },
   delivered:  { label: "Delivered",  bg: "bg-emerald-100", text: "text-emerald-700" },
   cancelled:  { label: "Cancelled",  bg: "bg-red-100",     text: "text-red-600"     },
+  rejected:   { label: "Rejected",   bg: "bg-rose-100",    text: "text-rose-700"    },
 };
 
 const ORDER_STEPS = [
@@ -53,7 +54,7 @@ function filterOrders(orders: VendorOrder[], tab: Tab): VendorOrder[] {
     case "New":       return orders; // pool is already pre-filtered to unassigned pending
     case "Active":    return orders.filter((o) => ["confirmed", "in_transit"].includes(o.status));
     case "Delivered": return orders.filter((o) => o.status === "delivered");
-    case "Cancelled": return orders.filter((o) => o.status === "cancelled");
+    case "Cancelled": return orders.filter((o) => o.status === "cancelled" || o.status === "rejected");
     default:          return orders;
   }
 }
@@ -66,7 +67,7 @@ function OrderDetailSheet({ order, onClose, onAction }: {
   const [acting, setActing] = useState(false);
   const meta = STATUS_META[order.status] ?? STATUS_META.pending;
   const stepIdx = ORDER_STEPS.findIndex((s) => s.key === order.status);
-  const isCancelled = order.status === "cancelled";
+  const isCancelled = order.status === "cancelled" || order.status === "rejected";
 
   const doAction = async (action: "accept" | "reject" | "advance") => {
     setActing(true);
@@ -242,7 +243,9 @@ function OrderDetailSheet({ order, onClose, onAction }: {
           {isCancelled && (
             <div className="flex items-center justify-center gap-2 py-3 text-red-400">
               <XCircle className="h-5 w-5" />
-              <span className="text-sm font-extrabold">Order was cancelled</span>
+              <span className="text-sm font-extrabold">
+                {order.status === "rejected" ? "Order was rejected" : "Order was cancelled"}
+              </span>
             </div>
           )}
         </div>
@@ -295,7 +298,7 @@ export function Orders() {
     New:       newOrders.length,
     Active:    myOrders.filter((o) => ["confirmed","in_transit"].includes(o.status)).length,
     Delivered: myOrders.filter((o) => o.status === "delivered").length,
-    Cancelled: myOrders.filter((o) => o.status === "cancelled").length,
+    Cancelled: myOrders.filter((o) => o.status === "cancelled" || o.status === "rejected").length,
   }), [myOrders, newOrders]);
 
   const visible = useMemo(() => {
@@ -379,6 +382,13 @@ export function Orders() {
                       {isNew && (
                         <span className="text-[9px] font-extrabold bg-amber-500 text-white px-1.5 py-0.5 rounded-full animate-pulse">NEW</span>
                       )}
+                      <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${
+                        order.orderType === "subscription" ? "bg-indigo-100 text-indigo-700" :
+                        order.orderType === "schedule"     ? "bg-teal-100 text-teal-700" :
+                                                             "bg-sky-100 text-sky-700"
+                      }`}>
+                        {order.orderType === "subscription" ? "🔄 Sub" : order.orderType === "schedule" ? "📅 Sched" : "🛒 Cart"}
+                      </span>
                     </div>
                     <p className="text-xs text-slate-500 truncate">{order.customer} · {order.items}</p>
                   </div>
