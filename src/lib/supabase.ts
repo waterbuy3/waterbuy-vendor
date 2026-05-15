@@ -38,7 +38,15 @@ function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respon
 }
 
 export const supabase = isConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: safeFetch } })
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      global: { fetch: safeFetch },
+      auth: {
+        flowType: "implicit",       // localStorage-only — works in PWA standalone
+        persistSession: true,
+        detectSessionInUrl: true,
+        autoRefreshToken: true,
+      },
+    })
   : null;
 
 // ─── Types ────────────────────────────────────────────────────────────────────

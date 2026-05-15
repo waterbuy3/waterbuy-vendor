@@ -8,9 +8,17 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="AquaVendor" />
     <meta name="description" content="AquaPure distributor portal — manage orders, products and earnings" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="icon" href="/icons/icon-192.png" />
     <title>AquaPure Vendor</title>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').catch(function() {});
+        });
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
