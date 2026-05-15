@@ -274,69 +274,42 @@ export function subscribeMyOrders(
   return () => { supabase!.removeChannel(channel); };
 }
 
-/** Unassigned pending orders a vendor can claim — limit 30, realtime on status changes. */
+/** Unassigned pending orders a vendor can claim — limit 30, realtime on any change. */
 export function subscribeNewOrders(
   callback: (orders: VendorOrder[]) => void
 ): () => void {
   if (!supabase) { callback([]); return () => {}; }
 
-  let current: VendorOrder[] = [];
-  const emit = () => callback(current);
+  let mounted = true;
 
-  (async () => {
-    const { data } = await supabase!
+  const refetch = async () => {
+    if (!mounted || !supabase) return;
+    const { data } = await supabase
       .from("orders")
       .select(ORDER_COLS)
       .is("vendor_id", null)
       .eq("status", "pending")
       .order("placed_at", { ascending: false })
       .limit(30);
-    current = (data ?? []).map((r) => rowToOrder(r as Record<string, unknown>));
-    emit();
-  })();
+    if (!mounted) return;
+    callback((data ?? []).map((r) => rowToOrder(r as Record<string, unknown>)));
+  };
 
-  // We can't filter on `vendor_id IS NULL` server-side via the realtime
-  // postgres_changes filter, so we listen to all pending-status events and
-  // apply the unassigned check client-side.
-  const isUnassignedPending = (o: VendorOrder) => !o.vendorId && o.status === "pending";
+  refetch();
 
+  // Re-fetch on every INSERT/UPDATE/DELETE so cancellations from the customer
+  // app (which change status → cancelled) immediately drop off the list.
   const channel = supabase
     .channel("new-orders-pending")
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders", filter: "status=eq.pending" },
-      ({ new: row }) => {
-        const o = rowToOrder(row as Record<string, unknown>);
-        if (!isUnassignedPending(o) || current.some((x) => x.id === o.id)) return;
-        current = [o, ...current].slice(0, 30);
-        emit();
-      })
-    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" },
-      ({ new: row }) => {
-        const o = rowToOrder(row as Record<string, unknown>);
-        const wasIn = current.some((x) => x.id === o.id);
-        const shouldBe = isUnassignedPending(o);
-        if (wasIn && !shouldBe) {
-          current = current.filter((x) => x.id !== o.id);
-          emit();
-        } else if (!wasIn && shouldBe) {
-          current = [o, ...current].slice(0, 30);
-          emit();
-        } else if (wasIn && shouldBe) {
-          current = current.map((x) => (x.id === o.id ? o : x));
-          emit();
-        }
-      })
-    .on("postgres_changes", { event: "DELETE", schema: "public", table: "orders" },
-      ({ old: row }) => {
-        const id = (row as { id?: string }).id;
-        if (!id) return;
-        const next = current.filter((x) => x.id !== id);
-        if (next.length === current.length) return;
-        current = next;
-        emit();
-      })
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, refetch)
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" }, refetch)
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "orders" }, refetch)
     .subscribe();
 
-  return () => { supabase!.removeChannel(channel); };
+  return () => {
+    mounted = false;
+    supabase!.removeChannel(channel);
+  };
 }
 
 export async function updateOrderStatus(orderId: string, status: string): Promise<void> {
