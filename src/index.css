@@ -1,27 +1,97 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..900;1,14..32,300..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300..900&display=swap');
 @import "tailwindcss";
 
 @layer base {
   :root {
     font-family: 'Inter', system-ui, sans-serif;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  * {
+    -webkit-tap-highlight-color: transparent;
+    box-sizing: border-box;
+  }
 
-  .sidebar-scroll::-webkit-scrollbar { width: 2px; }
-  .sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); }
+  body {
+    overscroll-behavior-y: none;
+    background: #f8fafc;
+  }
+
+  /* Hide scrollbar everywhere on mobile */
+  ::-webkit-scrollbar { display: none; }
+  * { scrollbar-width: none; }
+
+  input, textarea, select {
+    font-family: inherit;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
+
+/* Safe area utilities */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+.mb-safe { margin-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Bottom nav height + safe area */
+.pb-nav { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+
+/* Animations */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes fade-backdrop {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes pulse-ring {
+  0%   { transform: scale(1); opacity: 1; }
+  50%  { transform: scale(1.15); opacity: 0.6; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 .animate-fade-in {
-  animation: fade-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fade-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+.animate-slide-up {
+  animation: slide-up 0.34s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-backdrop {
+  animation: fade-backdrop 0.22s ease forwards;
+}
+
+.animate-slide-right {
+  animation: slide-in-right 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #34d399;
+  animation: pulse-ring 2s ease-in-out infinite;
+}
+
+/* Momentum scrolling on iOS */
+.scroll-ios {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
 }

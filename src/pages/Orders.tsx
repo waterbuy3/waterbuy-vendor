@@ -1,29 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
-  ShoppingBag, CheckCircle2, XCircle, Truck, ChevronRight,
-  MapPin, Phone, CreditCard, Package, Droplets,
+  ShoppingBag, CheckCircle2, XCircle, Truck, MapPin, Phone,
+  CreditCard, Package, Droplets, X, Search, ChevronRight,
+  MessageCircle, Clock,
 } from "lucide-react";
-import { subscribeVendorOrders, acceptOrder, rejectOrder, updateOrderStatus, type VendorOrder } from "@/lib/supabase";
+import {
+  subscribeVendorOrders, acceptOrder, rejectOrder, updateOrderStatus,
+  type VendorOrder,
+} from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
-import { format } from "date-fns";
+import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { toast } from "sonner";
 
 const TABS = ["All", "New", "Active", "Delivered", "Cancelled"] as const;
 type Tab = (typeof TABS)[number];
 
-const STATUS_META: Record<string, { label: string; color: string }> = {
-  pending:    { label: "New",        color: "text-amber-600 bg-amber-50 border-amber-200"    },
-  confirmed:  { label: "Confirmed",  color: "text-blue-600 bg-blue-50 border-blue-200"       },
-  in_transit: { label: "In Transit", color: "text-purple-600 bg-purple-50 border-purple-200" },
-  delivered:  { label: "Delivered",  color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
-  cancelled:  { label: "Cancelled",  color: "text-red-500 bg-red-50 border-red-200"          },
+const STATUS_META: Record<string, { label: string; bg: string; text: string }> = {
+  pending:    { label: "New",        bg: "bg-amber-100",   text: "text-amber-700"   },
+  confirmed:  { label: "Confirmed",  bg: "bg-blue-100",    text: "text-blue-700"    },
+  in_transit: { label: "In Transit", bg: "bg-purple-100",  text: "text-purple-700"  },
+  delivered:  { label: "Delivered",  bg: "bg-emerald-100", text: "text-emerald-700" },
+  cancelled:  { label: "Cancelled",  bg: "bg-red-100",     text: "text-red-600"     },
 };
 
 const ORDER_STEPS = [
-  { key: "pending",    label: "Received"   },
-  { key: "confirmed",  label: "Confirmed"  },
-  { key: "in_transit", label: "Dispatched" },
-  { key: "delivered",  label: "Delivered"  },
+  { key: "pending",    label: "Received"  },
+  { key: "confirmed",  label: "Confirmed" },
+  { key: "in_transit", label: "Dispatched"},
+  { key: "delivered",  label: "Delivered" },
 ] as const;
 
 const NEXT_STATUS: Record<string, string> = {
@@ -32,13 +36,214 @@ const NEXT_STATUS: Record<string, string> = {
   in_transit: "delivered",
 };
 
+const NEXT_LABEL: Record<string, string> = {
+  pending:    "Accept Order",
+  confirmed:  "Mark Dispatched",
+  in_transit: "Mark Delivered",
+};
+
+function timeAgo(str: string): string {
+  try { return formatDistanceToNow(parseISO(str), { addSuffix: true }); }
+  catch { return ""; }
+}
+
 function filterOrders(orders: VendorOrder[], tab: Tab): VendorOrder[] {
-  if (tab === "All")       return orders;
-  if (tab === "New")       return orders.filter((o) => o.status === "pending");
-  if (tab === "Active")    return orders.filter((o) => ["confirmed","in_transit"].includes(o.status));
-  if (tab === "Delivered") return orders.filter((o) => o.status === "delivered");
-  if (tab === "Cancelled") return orders.filter((o) => o.status === "cancelled");
-  return orders;
+  switch (tab) {
+    case "New":       return orders.filter((o) => o.status === "pending");
+    case "Active":    return orders.filter((o) => ["confirmed", "in_transit"].includes(o.status));
+    case "Delivered": return orders.filter((o) => o.status === "delivered");
+    case "Cancelled": return orders.filter((o) => o.status === "cancelled");
+    default:          return orders;
+  }
+}
+
+function OrderDetailSheet({ order, onClose, onAction }: {
+  order: VendorOrder;
+  onClose: () => void;
+  onAction: (action: "accept" | "reject" | "advance", id: string) => Promise<void>;
+}) {
+  const [acting, setActing] = useState(false);
+  const meta = STATUS_META[order.status] ?? STATUS_META.pending;
+  const stepIdx = ORDER_STEPS.findIndex((s) => s.key === order.status);
+  const isCancelled = order.status === "cancelled";
+
+  const doAction = async (action: "accept" | "reject" | "advance") => {
+    setActing(true);
+    try { await onAction(action, order.id); }
+    finally { setActing(false); }
+  };
+
+  const phone = order.phone?.replace(/\D/g, "") ?? "";
+  const waLink = `https://wa.me/${phone.startsWith("91") ? phone : "91" + phone.slice(-10)}?text=${encodeURIComponent(`Hi ${order.customer}, your AquaPure order #${order.id.slice(-6).toUpperCase()} has been ${order.status === "pending" ? "confirmed" : order.status}.`)}`;
+  const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.address)}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-backdrop" onClick={onClose} />
+      <div className="relative bg-white rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col animate-slide-up">
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-slate-200 rounded-full" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pb-3 shrink-0">
+          <div>
+            <p className="text-base font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {order.placedAt ? format(parseISO(order.placedAt), "d MMM yyyy, h:mm a") : ""}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-extrabold px-3 py-1 rounded-full ${meta.bg} ${meta.text}`}>
+              {meta.label}
+            </span>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 px-5 pb-2 space-y-4">
+          {/* Timeline */}
+          {!isCancelled && (
+            <div className="bg-slate-50 rounded-2xl p-4">
+              <div className="flex items-center gap-0">
+                {ORDER_STEPS.map((step, i) => {
+                  const done = i <= stepIdx;
+                  const current = i === stepIdx;
+                  return (
+                    <div key={step.key} className="flex items-center flex-1">
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-extrabold border-2 transition-all ${
+                          done ? "bg-teal-500 border-teal-500 text-white" : "bg-white border-slate-200 text-slate-400"
+                        } ${current ? "ring-2 ring-teal-200 ring-offset-1" : ""}`}>
+                          {done ? "✓" : i + 1}
+                        </div>
+                        <span className={`text-[9px] font-bold text-center leading-tight ${done ? "text-teal-600" : "text-slate-400"}`}>
+                          {step.label}
+                        </span>
+                      </div>
+                      {i < ORDER_STEPS.length - 1 && (
+                        <div className={`flex-1 h-0.5 mx-1 mb-4 ${done && i < stepIdx ? "bg-teal-400" : "bg-slate-200"}`} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Customer */}
+          <div className="bg-slate-50 rounded-2xl p-4 space-y-3">
+            <p className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Customer</p>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-teal-100 flex items-center justify-center shrink-0">
+                  <span className="text-sm font-extrabold text-teal-700">{order.customer?.[0]?.toUpperCase() ?? "C"}</span>
+                </div>
+                <div>
+                  <p className="text-sm font-extrabold text-slate-900">{order.customer}</p>
+                  <p className="text-xs text-slate-500">{order.phone}</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={`tel:${order.phone}`}
+                  className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center"
+                >
+                  <Phone className="h-4 w-4 text-blue-600" />
+                </a>
+                <a
+                  href={waLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center"
+                >
+                  <MessageCircle className="h-4 w-4 text-emerald-600" />
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Address */}
+          <div className="bg-slate-50 rounded-2xl p-4">
+            <p className="text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2">Delivery Address</p>
+            <div className="flex items-start gap-2">
+              <MapPin className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-slate-700 leading-relaxed flex-1">{order.address}</p>
+            </div>
+            <a
+              href={mapsLink}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 flex items-center gap-1.5 text-xs font-bold text-teal-600 bg-teal-50 border border-teal-100 rounded-xl px-3 py-2 w-fit"
+            >
+              <MapPin className="h-3.5 w-3.5" /> Open in Maps
+            </a>
+          </div>
+
+          {/* Items */}
+          <div className="bg-slate-50 rounded-2xl p-4 space-y-3">
+            <p className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Order Details</p>
+            <div className="flex items-start gap-2">
+              <Package className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-slate-700">{order.items}</p>
+            </div>
+            {order.litres > 0 && (
+              <div className="flex items-center gap-2">
+                <Droplets className="h-4 w-4 text-slate-400 shrink-0" />
+                <p className="text-sm text-slate-700">{order.litres}L water</p>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-slate-400 shrink-0" />
+              <p className="text-sm text-slate-700">{order.payment?.toUpperCase()} · <span className="font-extrabold text-slate-900">₹{order.total}</span></p>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="px-5 py-4 border-t border-slate-100 space-y-2 shrink-0 pb-safe">
+          {NEXT_STATUS[order.status] && (
+            <button
+              disabled={acting}
+              onClick={() => doAction(order.status === "pending" ? "accept" : "advance")}
+              className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-sm font-extrabold rounded-2xl flex items-center justify-center gap-2 transition-colors"
+            >
+              <Truck className="h-4 w-4" />
+              {NEXT_LABEL[order.status] ?? "Advance"}
+            </button>
+          )}
+          {order.status === "pending" && (
+            <button
+              disabled={acting}
+              onClick={() => doAction("reject")}
+              className="w-full py-3 bg-red-50 text-red-600 text-sm font-extrabold rounded-2xl border border-red-100 transition-colors"
+            >
+              Reject Order
+            </button>
+          )}
+          {order.status === "delivered" && (
+            <div className="flex items-center justify-center gap-2 py-3 text-emerald-600">
+              <CheckCircle2 className="h-5 w-5" />
+              <span className="text-sm font-extrabold">Order completed successfully</span>
+            </div>
+          )}
+          {isCancelled && (
+            <div className="flex items-center justify-center gap-2 py-3 text-red-400">
+              <XCircle className="h-5 w-5" />
+              <span className="text-sm font-extrabold">Order was cancelled</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function Orders() {
@@ -46,208 +251,174 @@ export function Orders() {
   const [orders,   setOrders]   = useState<VendorOrder[]>([]);
   const [tab,      setTab]      = useState<Tab>("All");
   const [selected, setSelected] = useState<VendorOrder | null>(null);
+  const [query,    setQuery]    = useState("");
 
   useEffect(() => {
     if (!vendor) return;
     return subscribeVendorOrders(vendor.id, (o) => {
       setOrders(o);
-      setSelected((prev) => prev ? (o.find((x) => x.id === prev.id) ?? prev) : null);
+      setSelected((prev) => prev ? (o.find((x) => x.id === prev.id) ?? null) : null);
     });
   }, [vendor?.id]);
 
-  const visible = filterOrders(orders, tab);
-
-  const handle = async (action: "accept" | "reject" | "advance", id: string) => {
+  const handleAction = async (action: "accept" | "reject" | "advance", id: string) => {
     try {
-      if (action === "accept")  await acceptOrder(id, vendor!.id);
-      if (action === "reject")  await rejectOrder(id);
-      if (action === "advance") {
+      if (action === "accept") await acceptOrder(id, vendor!.id);
+      else if (action === "reject") await rejectOrder(id);
+      else {
         const order = orders.find((o) => o.id === id);
         if (order && NEXT_STATUS[order.status]) await updateOrderStatus(id, NEXT_STATUS[order.status]);
       }
-      toast.success(action === "accept" ? "Order accepted" : action === "reject" ? "Order rejected" : "Status updated");
+      const label = action === "accept" ? "Order accepted" : action === "reject" ? "Order rejected" : "Status updated";
+      toast.success(label);
     } catch { toast.error("Action failed"); }
   };
 
+  const tabCounts = useMemo(() => ({
+    All:       orders.length,
+    New:       orders.filter((o) => o.status === "pending").length,
+    Active:    orders.filter((o) => ["confirmed","in_transit"].includes(o.status)).length,
+    Delivered: orders.filter((o) => o.status === "delivered").length,
+    Cancelled: orders.filter((o) => o.status === "cancelled").length,
+  }), [orders]);
+
+  const visible = useMemo(() => {
+    const base = filterOrders(orders, tab);
+    if (!query.trim()) return base;
+    const q = query.toLowerCase();
+    return base.filter((o) =>
+      o.customer.toLowerCase().includes(q) ||
+      o.id.slice(-6).toLowerCase().includes(q) ||
+      o.items.toLowerCase().includes(q)
+    );
+  }, [orders, tab, query]);
+
   return (
-    <div className="max-w-6xl animate-fade-in">
-      {/* Tabs */}
-      <div className="flex gap-1.5 mb-5 bg-slate-100 p-1 rounded-xl w-fit">
-        {TABS.map((t) => {
-          const count = filterOrders(orders, t).length;
-          return (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-1.5 rounded-lg text-xs font-extrabold transition-all ${
-                tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              }`}>
-              {t}{count > 0 && ` (${count})`}
-            </button>
-          );
-        })}
+    <div className="animate-fade-in">
+      {/* Header */}
+      <div className="bg-white pt-safe px-4 pt-4 pb-3 border-b border-slate-100 sticky top-0 z-10">
+        <h1 className="text-xl font-extrabold text-slate-900 mb-3">Orders</h1>
+
+        {/* Search */}
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search orders, customers…"
+            className="w-full pl-9 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:bg-white transition-all"
+          />
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+          {TABS.map((t) => {
+            const count = tabCounts[t];
+            const active = tab === t;
+            return (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                  active ? "bg-teal-600 text-white shadow-sm" : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {t}{count > 0 ? ` (${count})` : ""}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="flex gap-5">
-        {/* Order list */}
-        <div className="flex-1 space-y-2">
-          {visible.length === 0 && (
-            <div className="bg-white rounded-2xl border border-slate-100 py-16 text-center">
-              <ShoppingBag className="h-8 w-8 text-slate-200 mx-auto mb-3" />
-              <p className="text-sm text-slate-400">No orders in this category</p>
-            </div>
-          )}
-          {visible.map((order) => {
+      {/* Order list */}
+      <div className="px-4 py-3 space-y-2">
+        {visible.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-100 py-16 text-center mt-4">
+            <ShoppingBag className="h-8 w-8 text-slate-200 mx-auto mb-3" />
+            <p className="text-sm font-semibold text-slate-400">
+              {query ? "No orders match your search" : "No orders here"}
+            </p>
+          </div>
+        ) : (
+          visible.map((order) => {
             const meta = STATUS_META[order.status] ?? STATUS_META.pending;
             const isNew = order.status === "pending";
             return (
-              <div key={order.id}
+              <button
+                key={order.id}
                 onClick={() => setSelected(order)}
-                className={`bg-white rounded-2xl border cursor-pointer transition-all hover:shadow-md ${
-                  selected?.id === order.id ? "border-teal-300 shadow-md ring-1 ring-teal-200" : "border-slate-100"
-                } ${isNew ? "ring-1 ring-amber-200" : ""}`}>
-                <div className="flex items-center gap-4 px-5 py-4">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isNew ? "bg-amber-50" : "bg-slate-50"}`}>
-                    <Package className={`h-4 w-4 ${isNew ? "text-amber-500" : "text-slate-400"}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
+                className={`w-full bg-white rounded-2xl border shadow-sm p-4 text-left transition-all active:scale-[0.98] ${
+                  isNew ? "border-amber-200 ring-1 ring-amber-100" : "border-slate-100"
+                }`}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1 min-w-0 mr-3">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-sm font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</span>
-                      {isNew && <span className="text-[9px] font-extrabold bg-amber-500 text-white px-1.5 py-0.5 rounded-full animate-pulse">NEW</span>}
+                      <p className="text-sm font-extrabold text-slate-900">#{order.id.slice(-6).toUpperCase()}</p>
+                      {isNew && (
+                        <span className="text-[9px] font-extrabold bg-amber-500 text-white px-1.5 py-0.5 rounded-full animate-pulse">NEW</span>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-500 truncate">{order.items}</p>
+                    <p className="text-xs text-slate-500 truncate">{order.customer} · {order.items}</p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-extrabold text-slate-900">₹{order.total}</p>
-                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${meta.color}`}>{meta.label}</span>
+                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${meta.bg} ${meta.text}`}>
+                      {meta.label}
+                    </span>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
                 </div>
 
-                {/* Quick accept/reject for new orders */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <Clock className="h-3 w-3 text-slate-300" />
+                    <span className="text-[10px] text-slate-400">{timeAgo(order.placedAt)}</span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-slate-300" />
+                </div>
+
                 {isNew && (
-                  <div className="flex gap-2 px-5 pb-4">
-                    <button onClick={(e) => { e.stopPropagation(); handle("accept", order.id); }}
-                      className="flex-1 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold rounded-xl transition-colors flex items-center justify-center gap-1.5">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Accept Order
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleAction("accept", order.id); }}
+                      className="flex-1 py-2 bg-teal-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Accept
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); handle("reject", order.id); }}
-                      className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-extrabold rounded-xl transition-colors flex items-center justify-center gap-1.5 border border-red-100">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleAction("reject", order.id); }}
+                      className="flex-1 py-2 bg-red-50 text-red-600 text-xs font-extrabold rounded-xl border border-red-100 flex items-center justify-center gap-1.5"
+                    >
                       <XCircle className="h-3.5 w-3.5" /> Reject
                     </button>
                   </div>
                 )}
-              </div>
-            );
-          })}
-        </div>
 
-        {/* Detail panel */}
-        {selected && (
-          <div className="w-[320px] shrink-0 bg-white rounded-2xl border border-slate-100 shadow-sm h-fit sticky top-[80px]">
-            <div className="px-5 py-4 border-b border-slate-100">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-extrabold text-slate-900">#{selected.id.slice(-6).toUpperCase()}</span>
-                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${(STATUS_META[selected.status] ?? STATUS_META.pending).color}`}>
-                  {(STATUS_META[selected.status] ?? STATUS_META.pending).label}
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-400 mt-1">
-                {selected.placedAt ? format(new Date(selected.placedAt), "d MMM yyyy, h:mm a") : "—"}
-              </p>
-            </div>
-
-            {/* Timeline */}
-            <div className="px-5 py-4 border-b border-slate-100">
-              <div className="flex items-center gap-0">
-                {ORDER_STEPS.map((step, i) => {
-                  const stepIdx  = ORDER_STEPS.findIndex((s) => s.key === selected.status);
-                  const done     = i <= stepIdx;
-                  const current  = i === stepIdx;
-                  return (
-                    <div key={step.key} className="flex items-center flex-1">
-                      <div className="flex flex-col items-center gap-1">
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-extrabold ${
-                          done ? "bg-teal-500 text-white" : "bg-slate-100 text-slate-400"
-                        } ${current ? "ring-2 ring-teal-200" : ""}`}>
-                          {done ? "✓" : i + 1}
-                        </div>
-                        <span className={`text-[9px] font-semibold ${done ? "text-teal-600" : "text-slate-300"}`}>{step.label}</span>
-                      </div>
-                      {i < ORDER_STEPS.length - 1 && (
-                        <div className={`flex-1 h-0.5 mb-4 ${done && i < stepIdx ? "bg-teal-400" : "bg-slate-100"}`} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Details */}
-            <div className="px-5 py-4 space-y-3 border-b border-slate-100">
-              <div className="flex gap-2">
-                <Package className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-[10px] text-slate-400 font-semibold mb-0.5">Items</p>
-                  <p className="text-xs text-slate-700">{selected.items}</p>
-                </div>
-              </div>
-              {selected.litres > 0 && (
-                <div className="flex gap-2">
-                  <Droplets className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-[10px] text-slate-400 font-semibold mb-0.5">Litres</p>
-                    <p className="text-xs text-slate-700">{selected.litres}L</p>
+                {!isNew && order.status !== "delivered" && order.status !== "cancelled" && (
+                  <div className="mt-3">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleAction("advance", order.id); }}
+                      className="w-full py-2 bg-slate-50 text-slate-700 text-xs font-extrabold rounded-xl border border-slate-200 flex items-center justify-center gap-1.5"
+                    >
+                      <Truck className="h-3.5 w-3.5" /> {NEXT_LABEL[order.status] ?? "Advance"}
+                    </button>
                   </div>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <Phone className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-[10px] text-slate-400 font-semibold mb-0.5">Customer</p>
-                  <p className="text-xs font-bold text-slate-800">{selected.customer}</p>
-                  <p className="text-xs text-slate-500">{selected.phone}</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <MapPin className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-[10px] text-slate-400 font-semibold mb-0.5">Address</p>
-                  <p className="text-xs text-slate-700">{selected.address}</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <CreditCard className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-[10px] text-slate-400 font-semibold mb-0.5">Payment</p>
-                  <p className="text-xs text-slate-700">{selected.payment?.toUpperCase()} · ₹{selected.total}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="px-5 py-4 space-y-2">
-              {NEXT_STATUS[selected.status] && (
-                <button onClick={() => handle("advance", selected.id)}
-                  className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold rounded-xl transition-colors flex items-center justify-center gap-1.5">
-                  <Truck className="h-3.5 w-3.5" />
-                  Mark as {(STATUS_META[NEXT_STATUS[selected.status]] ?? {}).label ?? "Next"}
-                </button>
-              )}
-              {selected.status === "pending" && (
-                <button onClick={() => handle("reject", selected.id)}
-                  className="w-full py-2 bg-red-50 text-red-600 text-xs font-extrabold rounded-xl hover:bg-red-100 transition-colors border border-red-100">
-                  Reject Order
-                </button>
-              )}
-              {selected.status === "delivered" && (
-                <div className="flex items-center justify-center gap-1.5 py-2 text-emerald-600">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span className="text-xs font-extrabold">Order completed</span>
-                </div>
-              )}
-            </div>
-          </div>
+                )}
+              </button>
+            );
+          })
         )}
+        <div className="h-2" />
       </div>
+
+      {/* Detail sheet */}
+      {selected && (
+        <OrderDetailSheet
+          order={selected}
+          onClose={() => setSelected(null)}
+          onAction={handleAction}
+        />
+      )}
     </div>
   );
 }

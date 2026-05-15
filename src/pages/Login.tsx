@@ -26,25 +26,27 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-[#0c1122] flex items-center justify-center p-4">
-      <div className="w-full max-w-[400px]">
+    <div className="min-h-screen bg-gradient-to-br from-[#0c1122] via-slate-900 to-teal-950 flex flex-col">
+      {/* Top wave */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-8">
         {/* Logo */}
-        <div className="flex items-center gap-3 justify-center mb-8">
-          <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center shadow-lg">
-            <Droplets className="h-5 w-5 text-white" strokeWidth={2.5} />
+        <div className="flex flex-col items-center gap-3 mb-10">
+          <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shadow-2xl shadow-teal-500/40">
+            <Droplets className="h-8 w-8 text-white" strokeWidth={2.5} />
           </div>
-          <div>
-            <p className="text-[18px] font-extrabold text-white leading-tight">AquaPure</p>
-            <p className="text-[11px] text-white/40 font-medium">Vendor Portal</p>
+          <div className="text-center">
+            <p className="text-2xl font-extrabold text-white tracking-tight">AquaPure</p>
+            <p className="text-sm text-teal-400 font-medium">Vendor Portal</p>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
+        {/* Card */}
+        <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6">
           <h2 className="text-xl font-extrabold text-slate-900 mb-1">Welcome back</h2>
-          <p className="text-sm text-slate-400 mb-6">Sign in to your vendor account</p>
+          <p className="text-sm text-slate-400 mb-6">Sign in to manage your orders</p>
 
           {error && (
-            <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-600 font-medium">
+            <div className="mb-5 px-4 py-3 rounded-2xl bg-red-50 border border-red-100 text-sm text-red-600 font-medium">
               {error}
             </div>
           )}
@@ -56,7 +58,7 @@ export function Login() {
                 type="email" required autoComplete="email"
                 value={email} onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full px-4 py-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:bg-white transition-all"
+                className="w-full px-4 py-3.5 text-sm bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-teal-500/25 focus:bg-white transition-all"
               />
             </div>
 
@@ -67,10 +69,12 @@ export function Login() {
                   type={showPw ? "text" : "password"} required autoComplete="current-password"
                   value={password} onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3 pr-10 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:bg-white transition-all"
+                  className="w-full px-4 py-3.5 pr-12 text-sm bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-teal-500/25 focus:bg-white transition-all"
                 />
-                <button type="button" onClick={() => setShowPw(!showPw)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <button
+                  type="button" onClick={() => setShowPw(!showPw)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
+                >
                   {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
@@ -78,14 +82,14 @@ export function Login() {
 
             <button
               type="submit" disabled={loading}
-              className="w-full py-3 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-extrabold rounded-xl transition-colors flex items-center justify-center gap-2 mt-2"
+              className="w-full py-4 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 disabled:opacity-60 text-white font-extrabold rounded-2xl transition-colors flex items-center justify-center gap-2 mt-2 shadow-lg shadow-teal-600/25"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {loading ? "Signing in…" : "Sign in"}
+              {loading ? "Signing in…" : "Sign In"}
             </button>
           </form>
 
-          <p className="text-center text-xs text-slate-400 mt-5">
+          <p className="text-center text-xs text-slate-400 mt-6">
             New distributor?{" "}
             <Link to="/register" className="text-teal-600 font-bold hover:underline">
               Register your business
@@ -93,6 +97,10 @@ export function Login() {
           </p>
         </div>
       </div>
+
+      <p className="text-center text-xs text-white/20 pb-8">
+        AquaPure Vendor Portal · All rights reserved
+      </p>
     </div>
   );
 }
