@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Building2, Phone, MapPin, Landmark, KeyRound, LogOut,
   ChevronRight, Droplets, Save, Loader2, Eye, EyeOff,
-  ToggleLeft, ToggleRight, Percent, X,
+  ToggleLeft, ToggleRight, Percent, X, Mail,
 } from "lucide-react";
 import { updateVendorProfile, vendorSignOut, supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
@@ -262,7 +262,7 @@ export function Settings() {
 
           <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-50">
             <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center shrink-0">
-              <Phone className="h-5 w-5 text-slate-500" />
+              <Mail className="h-5 w-5 text-slate-500" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-extrabold text-slate-900">Email</p>
