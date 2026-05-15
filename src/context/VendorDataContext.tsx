@@ -4,7 +4,10 @@ import {
 import {
   subscribeMyOrders,
   subscribeNewOrders,
-  subscribeAllSchedules,
+  subscribeUnclaimedSchedules,
+  subscribeMySchedules,
+  subscribeUnclaimedSubscriptions,
+  subscribeMySubscriptions,
   subscribeVendorPayouts,
   type VendorOrder,
   type VendorSchedule,
@@ -13,12 +16,14 @@ import {
 import { useAuth } from "@/context/AuthContext";
 
 interface VendorDataContextValue {
-  myOrders:  VendorOrder[];
-  newOrders: VendorOrder[];
-  schedules: VendorSchedule[];
-  payouts:   Payout[];
-  loading:   boolean;
-  // Pre-computed summary (avoids redundant getEarningSummary() calls)
+  myOrders:               VendorOrder[];
+  newOrders:              VendorOrder[];
+  unclaimedSchedules:     VendorSchedule[];
+  mySchedules:            VendorSchedule[];
+  unclaimedSubscriptions: VendorOrder[];
+  mySubscriptions:        VendorOrder[];
+  payouts:                Payout[];
+  loading:                boolean;
   totalRevenue:   number;
   totalDelivered: number;
   totalLitres:    number;
@@ -26,57 +31,61 @@ interface VendorDataContextValue {
 }
 
 const VendorDataContext = createContext<VendorDataContextValue>({
-  myOrders: [], newOrders: [], schedules: [], payouts: [], loading: true,
+  myOrders: [], newOrders: [],
+  unclaimedSchedules: [], mySchedules: [],
+  unclaimedSubscriptions: [], mySubscriptions: [],
+  payouts: [], loading: true,
   totalRevenue: 0, totalDelivered: 0, totalLitres: 0, pendingPayout: 0,
 });
 
 export function VendorDataProvider({ children }: { children: ReactNode }) {
   const { vendor } = useAuth();
-  const [myOrders,  setMyOrders]  = useState<VendorOrder[]>([]);
-  const [newOrders, setNewOrders] = useState<VendorOrder[]>([]);
-  const [schedules, setSchedules] = useState<VendorSchedule[]>([]);
-  const [payouts,   setPayouts]   = useState<Payout[]>([]);
-  const [loading,   setLoading]   = useState(true);
+  const [myOrders,               setMyOrders]               = useState<VendorOrder[]>([]);
+  const [newOrders,              setNewOrders]              = useState<VendorOrder[]>([]);
+  const [unclaimedSchedules,     setUnclaimedSchedules]     = useState<VendorSchedule[]>([]);
+  const [mySchedules,            setMySchedules]            = useState<VendorSchedule[]>([]);
+  const [unclaimedSubscriptions, setUnclaimedSubscriptions] = useState<VendorOrder[]>([]);
+  const [mySubscriptions,        setMySubscriptions]        = useState<VendorOrder[]>([]);
+  const [payouts,                setPayouts]                = useState<Payout[]>([]);
+  const [loading,                setLoading]                = useState(true);
 
   useEffect(() => {
     if (!vendor?.id) {
-      // No vendor yet — drop loading so we don't block the UI indefinitely
-      // and reset cached arrays from any previous vendor.
-      setMyOrders([]);
-      setNewOrders([]);
-      setPayouts([]);
-      setLoading(false);
+      setMyOrders([]); setNewOrders([]);
+      setUnclaimedSchedules([]); setMySchedules([]);
+      setUnclaimedSubscriptions([]); setMySubscriptions([]);
+      setPayouts([]); setLoading(false);
       return;
     }
 
     setLoading(true);
-    let myDone  = false;
-    let newDone = false;
+    let myDone = false, newDone = false;
     const maybeFinish = () => { if (myDone && newDone) setLoading(false); };
 
-    const unsubMy = subscribeMyOrders(vendor.id, (orders) => {
-      setMyOrders(orders);
-      myDone = true;
-      maybeFinish();
-    });
+    const unsubMy  = subscribeMyOrders(vendor.id, (o) => { setMyOrders(o);  myDone  = true; maybeFinish(); });
+    const unsubNew = subscribeNewOrders((o)        => { setNewOrders(o); newDone = true; maybeFinish(); });
 
-    const unsubNew = subscribeNewOrders((orders) => {
-      setNewOrders(orders);
-      newDone = true;
-      maybeFinish();
-    });
+    const unsubUnclaimedSched = subscribeUnclaimedSchedules(setUnclaimedSchedules);
+    const unsubMySched        = subscribeMySchedules(vendor.id, setMySchedules);
+    const unsubUnclaimedSub   = subscribeUnclaimedSubscriptions(setUnclaimedSubscriptions);
+    const unsubMySub          = subscribeMySubscriptions(vendor.id, setMySubscriptions);
+    const unsubPay            = subscribeVendorPayouts(vendor.id, setPayouts);
 
-    const unsubSchedules = subscribeAllSchedules(setSchedules);
-    const unsubPay = subscribeVendorPayouts(vendor.id, setPayouts);
-
-    return () => { unsubMy(); unsubNew(); unsubSchedules(); unsubPay(); };
+    return () => {
+      unsubMy(); unsubNew();
+      unsubUnclaimedSched(); unsubMySched();
+      unsubUnclaimedSub(); unsubMySub();
+      unsubPay();
+    };
   }, [vendor?.id]);
 
   const { totalRevenue, totalDelivered, totalLitres, pendingPayout } = useMemo(() => {
     const delivered = myOrders.filter((o) => o.status === "delivered");
-    const revenue   = delivered.reduce((s, o) => s + o.total,  0);
-    const litres    = delivered.reduce((s, o) => s + o.litres, 0);
-    const commPct   = vendor?.commissionPct ?? 10;
+    // Subscription parent orders (confirmed) count their monthly fee once
+    const confirmedSubs = myOrders.filter((o) => o.orderType === "subscription" && o.status === "confirmed");
+    const revenue = [...delivered, ...confirmedSubs].reduce((s, o) => s + o.total, 0);
+    const litres  = delivered.reduce((s, o) => s + o.litres, 0);
+    const commPct = vendor?.commissionPct ?? 10;
     const vendorShare = revenue * (1 - commPct / 100);
     const paid = payouts.filter((p) => p.status === "paid").reduce((s, p) => s + p.amount, 0);
     return {
@@ -87,13 +96,14 @@ export function VendorDataProvider({ children }: { children: ReactNode }) {
     };
   }, [myOrders, payouts, vendor?.commissionPct]);
 
-  // Memoize the context value so consumers don't re-render unless the
-  // underlying data actually changed (otherwise every parent render of
-  // VendorDataProvider would re-render every consumer of useVendorData).
   const value = useMemo(() => ({
-    myOrders, newOrders, schedules, payouts, loading,
+    myOrders, newOrders,
+    unclaimedSchedules, mySchedules,
+    unclaimedSubscriptions, mySubscriptions,
+    payouts, loading,
     totalRevenue, totalDelivered, totalLitres, pendingPayout,
-  }), [myOrders, newOrders, schedules, payouts, loading,
+  }), [myOrders, newOrders, unclaimedSchedules, mySchedules,
+       unclaimedSubscriptions, mySubscriptions, payouts, loading,
        totalRevenue, totalDelivered, totalLitres, pendingPayout]);
 
   return (
