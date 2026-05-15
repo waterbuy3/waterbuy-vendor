@@ -1,14 +1,19 @@
-const CACHE = "aquapure-vendor-v1";
+const CACHE = "aquapure-vendor-v2";
 const PRECACHE = [
   "/",
-  "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/icon-maskable-512.png",
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)));
+  // allSettled: one unreachable asset must not abort the whole install,
+  // otherwise the service worker never activates.
+  e.waitUntil(
+    caches.open(CACHE).then((c) =>
+      Promise.allSettled(PRECACHE.map((url) => c.add(url)))
+    )
+  );
   self.skipWaiting();
 });
 

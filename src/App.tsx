@@ -4,6 +4,7 @@ import { Droplets, Clock } from "lucide-react";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { VendorDataProvider } from "@/context/VendorDataContext";
 import { Layout } from "@/components/Layout";
+import { InstallPrompt } from "@/components/InstallPrompt";
 import { Login }     from "@/pages/Login";
 import { Register }  from "@/pages/Register";
 import { Dashboard } from "@/pages/Dashboard";
@@ -74,6 +75,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Toaster position="top-center" richColors closeButton />
+        <InstallPrompt />
         <Routes>
           <Route path="/login"    element={<Login />} />
           <Route path="/register" element={<Register />} />
