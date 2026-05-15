@@ -49,7 +49,7 @@ function timeAgo(str: string): string {
 
 function filterOrders(orders: VendorOrder[], tab: Tab): VendorOrder[] {
   switch (tab) {
-    case "New":       return orders.filter((o) => o.status === "pending");
+    case "New":       return orders; // pool is already pre-filtered to unassigned pending
     case "Active":    return orders.filter((o) => ["confirmed", "in_transit"].includes(o.status));
     case "Delivered": return orders.filter((o) => o.status === "delivered");
     case "Cancelled": return orders.filter((o) => o.status === "cancelled");
@@ -265,6 +265,16 @@ export function Orders() {
     });
   }, [vendor?.id]);
 
+  // Orders accepted by (or assigned to) this vendor
+  const myOrders = useMemo(() =>
+    orders.filter((o) => o.vendorId === vendor?.id),
+    [orders, vendor?.id]);
+
+  // Unassigned pending orders available to accept
+  const newOrders = useMemo(() =>
+    orders.filter((o) => !o.vendorId && o.status === "pending"),
+    [orders]);
+
   const handleAction = async (action: "accept" | "reject" | "advance", id: string) => {
     try {
       if (action === "accept") await acceptOrder(id, vendor!.id);
@@ -279,15 +289,17 @@ export function Orders() {
   };
 
   const tabCounts = useMemo(() => ({
-    All:       orders.length,
-    New:       orders.filter((o) => o.status === "pending").length,
-    Active:    orders.filter((o) => ["confirmed","in_transit"].includes(o.status)).length,
-    Delivered: orders.filter((o) => o.status === "delivered").length,
-    Cancelled: orders.filter((o) => o.status === "cancelled").length,
-  }), [orders]);
+    All:       myOrders.length,
+    New:       newOrders.length,
+    Active:    myOrders.filter((o) => ["confirmed","in_transit"].includes(o.status)).length,
+    Delivered: myOrders.filter((o) => o.status === "delivered").length,
+    Cancelled: myOrders.filter((o) => o.status === "cancelled").length,
+  }), [myOrders, newOrders]);
 
   const visible = useMemo(() => {
-    const base = filterOrders(orders, tab);
+    // "New" tab shows claimable unassigned orders; all other tabs show this vendor's orders
+    const pool = tab === "New" ? newOrders : myOrders;
+    const base = filterOrders(pool, tab);
     if (!query.trim()) return base;
     const q = query.toLowerCase();
     return base.filter((o) =>
@@ -295,7 +307,7 @@ export function Orders() {
       o.id.slice(-6).toLowerCase().includes(q) ||
       o.items.toLowerCase().includes(q)
     );
-  }, [orders, tab, query]);
+  }, [myOrders, newOrders, tab, query]);
 
   return (
     <div className="animate-fade-in">
