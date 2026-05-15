@@ -68,17 +68,25 @@ export function Settings() {
 
   useEffect(() => {
     if (!vendor) return;
-    setProfile({ name: vendor.name, phone: vendor.phone, area: vendor.area });
-    setBank({ bankName: vendor.bankName, bankAccount: vendor.bankAccount, bankIfsc: vendor.bankIfsc });
-  }, [vendor?.id]);
+    setProfile({ name: vendor.name ?? "", phone: vendor.phone ?? "", area: vendor.area ?? "" });
+    setBank({ bankName: vendor.bankName ?? "", bankAccount: vendor.bankAccount ?? "", bankIfsc: vendor.bankIfsc ?? "" });
+    // Re-sync whenever the underlying vendor data changes so external updates
+    // (e.g. admin tweaks) show up in the editor sheets.
+  }, [vendor?.id, vendor?.name, vendor?.phone, vendor?.area, vendor?.bankName, vendor?.bankAccount, vendor?.bankIfsc]);
 
   const inp = "w-full px-4 py-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white transition-all";
 
   const saveProfile = async () => {
     if (!vendor) return;
+    if (!profile.name.trim()) { toast.error("Business name is required"); return; }
+    if (!profile.phone.trim()) { toast.error("Phone number is required"); return; }
     setSaving(true);
     try {
-      await updateVendorProfile(vendor.id, profile);
+      await updateVendorProfile(vendor.id, {
+        name:  profile.name.trim(),
+        phone: profile.phone.trim(),
+        area:  profile.area.trim(),
+      });
       toast.success("Profile updated");
       setOpenSection(null);
     } catch { toast.error("Failed to update profile"); }
@@ -87,9 +95,19 @@ export function Settings() {
 
   const saveBank = async () => {
     if (!vendor) return;
+    if (!bank.bankName.trim() || !bank.bankAccount.trim() || !bank.bankIfsc.trim()) {
+      toast.error("All bank fields are required"); return;
+    }
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(bank.bankIfsc.trim())) {
+      toast.error("Enter a valid IFSC code"); return;
+    }
     setSaving(true);
     try {
-      await updateVendorProfile(vendor.id, bank);
+      await updateVendorProfile(vendor.id, {
+        bankName:    bank.bankName.trim(),
+        bankAccount: bank.bankAccount.trim(),
+        bankIfsc:    bank.bankIfsc.trim().toUpperCase(),
+      });
       toast.success("Bank details updated");
       setOpenSection(null);
     } catch { toast.error("Failed to update bank details"); }
@@ -227,7 +245,9 @@ export function Settings() {
             <div className="flex-1 text-left min-w-0">
               <p className="text-sm font-extrabold text-slate-900">Bank Details</p>
               <p className="text-xs text-slate-400 truncate mt-0.5">
-                {vendor?.bankName ? `${vendor.bankName} · ****${vendor.bankAccount.slice(-4)}` : "Not set — add for payouts"}
+                {vendor?.bankName && vendor?.bankAccount
+                  ? `${vendor.bankName} · ****${vendor.bankAccount.slice(-4)}`
+                  : "Not set — add for payouts"}
               </p>
             </div>
             <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
@@ -309,7 +329,7 @@ export function Settings() {
               <div className="relative">
                 <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <input value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                  placeholder="+91 98765 43210" className={`${inp} pl-10`} />
+                  placeholder="+91 98765 43210" className={`${inp} pl-10`} inputMode="tel" autoComplete="tel" />
               </div>
             </div>
             <div>
@@ -341,17 +361,27 @@ export function Settings() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1.5">Account Number</label>
-              <input value={bank.bankAccount} onChange={(e) => setBank({ ...bank, bankAccount: e.target.value })}
-                placeholder="Enter account number" className={inp} inputMode="numeric" />
+              <input
+                value={bank.bankAccount}
+                onChange={(e) => setBank({ ...bank, bankAccount: e.target.value.replace(/\D/g, "") })}
+                placeholder="Enter account number"
+                className={inp}
+                inputMode="numeric"
+                maxLength={20}
+                autoComplete="off"
+              />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1.5">IFSC Code</label>
               <input
                 value={bank.bankIfsc}
-                onChange={(e) => setBank({ ...bank, bankIfsc: e.target.value.toUpperCase() })}
+                onChange={(e) => setBank({ ...bank, bankIfsc: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })}
                 placeholder="e.g. SBIN0001234"
                 className={inp}
                 style={{ textTransform: "uppercase" }}
+                maxLength={11}
+                autoCapitalize="characters"
+                autoComplete="off"
               />
             </div>
           </div>

@@ -39,16 +39,21 @@ function Guard({ children }: { children: React.ReactNode }) {
 
   if (!user) return <Navigate to="/login" replace />;
 
-  if (!vendor) {
+  if (!vendor || vendor.active === false) {
+    const isDeactivated = !!vendor && vendor.active === false;
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-xs w-full text-center">
           <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto mb-4">
             <Clock className="h-8 w-8 text-amber-500" />
           </div>
-          <h2 className="text-lg font-extrabold text-slate-900 mb-2">Pending Activation</h2>
+          <h2 className="text-lg font-extrabold text-slate-900 mb-2">
+            {isDeactivated ? "Account Deactivated" : "Pending Activation"}
+          </h2>
           <p className="text-sm text-slate-500 leading-relaxed">
-            Your vendor account is being set up by the platform admin. You'll be notified when it's ready.
+            {isDeactivated
+              ? "Your vendor account has been deactivated by the platform admin. Please contact support for help."
+              : "Your vendor account is being set up by the platform admin. You'll be notified when it's ready."}
           </p>
           <button
             onClick={() => vendorSignOut()}

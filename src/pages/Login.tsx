@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Droplets, Eye, EyeOff, Loader2 } from "lucide-react";
 import { signInWithEmail } from "@/lib/supabase";
+import { useAuth } from "@/context/AuthContext";
 
 export function Login() {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && user) navigate("/", { replace: true });
+  }, [user, authLoading, navigate]);
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [showPw,   setShowPw]   = useState(false);
@@ -17,7 +23,8 @@ export function Login() {
     setError(null);
     try {
       await signInWithEmail(email.trim(), password);
-      navigate("/");
+      // Don't navigate here — the useEffect on `user` handles redirect once
+      // onAuthStateChange propagates, avoiding a guard race back to /login.
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid credentials. Please try again.");
     } finally {
@@ -26,12 +33,12 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "linear-gradient(135deg, #06041a 0%, #0f0c36 40%, #1a1060 70%, #0d1a6e 100%)" }}>
+    <div className="min-h-screen flex flex-col pt-safe pb-safe" style={{ background: "linear-gradient(135deg, #06041a 0%, #0f0c36 40%, #1a1060 70%, #0d1a6e 100%)" }}>
       {/* Decorative blobs */}
       <div className="fixed top-0 right-0 w-64 h-64 rounded-full opacity-20 blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #7c3aed, transparent)" }} />
       <div className="fixed bottom-0 left-0 w-48 h-48 rounded-full opacity-15 blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #2563eb, transparent)" }} />
 
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-8 relative">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 relative">
         {/* Logo */}
         <div className="flex flex-col items-center gap-3 mb-10">
           <div className="w-18 h-18 rounded-3xl flex items-center justify-center shadow-2xl shadow-indigo-500/40" style={{ width: 72, height: 72, background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
@@ -59,6 +66,7 @@ export function Login() {
               <label className="block text-xs font-semibold text-slate-500 mb-1.5">Email address</label>
               <input
                 type="email" required autoComplete="email"
+                inputMode="email" autoCapitalize="none"
                 value={email} onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 className="w-full px-4 py-3.5 text-sm bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:bg-white transition-all"
@@ -102,7 +110,7 @@ export function Login() {
         </div>
       </div>
 
-      <p className="text-center text-xs pb-8 relative" style={{ color: "rgba(255,255,255,0.15)" }}>
+      <p className="text-center text-xs pb-6 relative" style={{ color: "rgba(255,255,255,0.15)" }}>
         AquaPure Vendor Portal · All rights reserved
       </p>
     </div>

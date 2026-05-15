@@ -215,17 +215,17 @@ export function Dashboard() {
       {/* ── Today Stats ── */}
       <div className="px-4 -mt-4 grid grid-cols-3 gap-2.5 mb-4">
         {[
-          { label: "Today's Orders", value: String(todayOrders.length),  icon: ShoppingBag, bg: "bg-orange-50",  ic: "text-orange-500",  border: "border-orange-100" },
-          { label: "Revenue Today",  value: `₹${todayRevenue}`,          icon: TrendingUp,  bg: "bg-emerald-50", ic: "text-emerald-600", border: "border-emerald-100" },
-          { label: "Litres Deliv.",  value: `${todayLitres}L`,           icon: Droplets,    bg: "bg-blue-50",    ic: "text-blue-500",    border: "border-blue-100"   },
+          { label: "Today's Orders", value: String(todayOrders.length),  icon: ShoppingBag, bg: "bg-orange-50",  ic: "text-orange-500",  border: "border-orange-100", to: "/orders"   },
+          { label: "Revenue Today",  value: `₹${todayRevenue}`,          icon: TrendingUp,  bg: "bg-emerald-50", ic: "text-emerald-600", border: "border-emerald-100", to: "/earnings" },
+          { label: "Litres Deliv.",  value: `${todayLitres}L`,           icon: Droplets,    bg: "bg-blue-50",    ic: "text-blue-500",    border: "border-blue-100",    to: "/orders"   },
         ].map((s) => (
-          <div key={s.label} className={`bg-white rounded-2xl shadow-md border ${s.border} p-3`}>
+          <button key={s.label} onClick={() => navigate(s.to)} className={`bg-white rounded-2xl shadow-md border ${s.border} p-3 text-left active:scale-95 transition-transform`}>
             <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center mb-2`}>
               <s.icon className={`h-4 w-4 ${s.ic}`} strokeWidth={1.8} />
             </div>
             <p className="text-[10px] text-slate-400 font-medium leading-tight">{s.label}</p>
             <p className="text-[17px] font-extrabold text-slate-900 leading-tight mt-0.5">{s.value}</p>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -285,14 +285,14 @@ export function Dashboard() {
         {/* ── Weekly Revenue Chart ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
           <div className="flex items-center justify-between mb-4">
-            <div>
+            <button onClick={() => navigate("/earnings")} className="text-left">
               <p className="text-[11px] text-slate-400 font-medium">Total Revenue</p>
               <p className="text-2xl font-extrabold text-slate-900">₹{totalRevenue.toLocaleString()}</p>
-            </div>
-            <div className="text-right">
+            </button>
+            <button onClick={() => navigate("/earnings")} className="text-right">
               <p className="text-[11px] text-slate-400 font-medium">Pending Payout</p>
               <p className="text-lg font-extrabold text-indigo-600">₹{pendingPayout.toLocaleString()}</p>
-            </div>
+            </button>
           </div>
           <WeekChart orders={myOrders} />
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-50">

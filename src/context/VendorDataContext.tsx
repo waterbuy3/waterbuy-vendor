@@ -35,7 +35,15 @@ export function VendorDataProvider({ children }: { children: ReactNode }) {
   const [loading,   setLoading]   = useState(true);
 
   useEffect(() => {
-    if (!vendor?.id) return;
+    if (!vendor?.id) {
+      // No vendor yet — drop loading so we don't block the UI indefinitely
+      // and reset cached arrays from any previous vendor.
+      setMyOrders([]);
+      setNewOrders([]);
+      setPayouts([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     let myDone  = false;

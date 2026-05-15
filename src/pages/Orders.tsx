@@ -253,10 +253,11 @@ function OrderDetailSheet({ order, onClose, onAction }: {
 
 export function Orders() {
   const { vendor } = useAuth();
-  const { myOrders, newOrders } = useVendorData();
+  const { myOrders, newOrders, loading } = useVendorData();
   const [tab,      setTab]      = useState<Tab>("All");
   const [selected, setSelected] = useState<VendorOrder | null>(null);
   const [query,    setQuery]    = useState("");
+  const [acting,   setActing]   = useState<string | null>(null);
 
   // Keep selected order in sync when realtime updates arrive.
   // Was previously a useMemo abused for side effects (setSelected during
@@ -272,6 +273,8 @@ export function Orders() {
   // Stable handler — passed into OrderDetailSheet, so we don't want it to
   // change identity on every render.
   const handleAction = useCallback(async (action: "accept" | "reject" | "advance", id: string) => {
+    if (acting) return;
+    setActing(id);
     try {
       if (action === "accept") await acceptOrder(id, vendor!.id);
       else if (action === "reject") await rejectOrder(id);
@@ -284,7 +287,8 @@ export function Orders() {
       const label = action === "accept" ? "Order accepted" : action === "reject" ? "Order rejected" : "Status updated";
       toast.success(label);
     } catch { toast.error("Action failed"); }
-  }, [vendor, myOrders, newOrders]);
+    finally { setActing(null); }
+  }, [vendor, myOrders, newOrders, acting]);
 
   const tabCounts = useMemo(() => ({
     All:       myOrders.length,
@@ -397,14 +401,16 @@ export function Orders() {
                 {isNew && (
                   <div className="flex gap-2 mt-3">
                     <button
+                      disabled={acting === order.id}
                       onClick={(e) => { e.stopPropagation(); handleAction("accept", order.id); }}
-                      className="flex-1 py-2 bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5"
+                      className="flex-1 py-2 min-h-[40px] bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-60"
                     >
                       <CheckCircle2 className="h-3.5 w-3.5" /> Accept
                     </button>
                     <button
+                      disabled={acting === order.id}
                       onClick={(e) => { e.stopPropagation(); handleAction("reject", order.id); }}
-                      className="flex-1 py-2 bg-red-50 text-red-600 text-xs font-extrabold rounded-xl border border-red-100 flex items-center justify-center gap-1.5"
+                      className="flex-1 py-2 min-h-[40px] bg-red-50 text-red-600 text-xs font-extrabold rounded-xl border border-red-100 flex items-center justify-center gap-1.5 disabled:opacity-60"
                     >
                       <XCircle className="h-3.5 w-3.5" /> Reject
                     </button>
@@ -414,8 +420,9 @@ export function Orders() {
                 {isActive && (
                   <div className="mt-3">
                     <button
+                      disabled={acting === order.id}
                       onClick={(e) => { e.stopPropagation(); handleAction("advance", order.id); }}
-                      className="w-full py-2 bg-indigo-50 text-indigo-700 text-xs font-extrabold rounded-xl border border-indigo-200 flex items-center justify-center gap-1.5"
+                      className="w-full py-2 min-h-[40px] bg-indigo-50 text-indigo-700 text-xs font-extrabold rounded-xl border border-indigo-200 flex items-center justify-center gap-1.5 disabled:opacity-60"
                     >
                       <Truck className="h-3.5 w-3.5" /> {NEXT_LABEL[order.status] ?? "Advance"}
                     </button>
